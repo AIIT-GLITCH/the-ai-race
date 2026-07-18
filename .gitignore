@@ -1,3 +1,4 @@
 .qa/
+dist/
 node_modules/
 *.log

@@ -63,6 +63,7 @@ Standard gamepads and full touch controls are supported.
 
 ```bash
 npm run check
+npm run build
 npm run test:browser  # requires Playwright/Chromium
 ```
 
