@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="theme-color" content="#05060a">
+<meta name="description" content="The AI Race: twelve frontier labs. One orbital compute array. A massive anti-gravity sprint to space.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<title>THE AI RACE // Race to Orbit</title>
+<style>
+  :root {
+    --ink: #f4f7f5;
+    --dim: #9aa6a2;
+    --void: #05060a;
+    --glass: rgba(7, 10, 15, .68);
+    --line: rgba(216, 255, 236, .16);
+    --mint: #b8ffda;
+    --acid: #dfff47;
+    --cyan: #6cecff;
+    --orange: #ff6534;
+    --hot: #ff3e93;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--void); }
+  body {
+    color: var(--ink);
+    font-family: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+    user-select: none;
+  }
+  button { font: inherit; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hud { position: fixed; z-index: 10; pointer-events: none; }
+  body:not(.race-active) #missionBar,
+  body:not(.race-active) #raceBox,
+  body:not(.race-active) #msg,
+  body:not(.race-active) #leaderboard,
+  body:not(.race-active) #telemetry,
+  body:not(.race-active) #minimap,
+  body:not(.race-active) #muteBtn,
+  body:not(.race-active) #controlsHint,
+  body:not(.race-active) #touch {
+    visibility: hidden;
+  }
+
+  /* race HUD */
+  #missionBar {
+    left: 22px;
+    top: 20px;
+    width: min(360px, 34vw);
+    padding: 13px 15px 12px;
+    background: linear-gradient(135deg, rgba(7, 10, 15, .9), rgba(7, 10, 15, .48));
+    border-left: 3px solid var(--acid);
+    backdrop-filter: blur(12px);
+  }
+  #missionEyebrow {
+    color: var(--acid);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .28em;
+    text-transform: uppercase;
+  }
+  #sectorName {
+    margin-top: 5px;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -.025em;
+    text-transform: uppercase;
+  }
+  #progressRail {
+    position: relative;
+    height: 3px;
+    margin-top: 11px;
+    overflow: hidden;
+    background: rgba(255,255,255,.13);
+  }
+  #progressFill {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, var(--acid), var(--cyan));
+    box-shadow: 0 0 12px var(--acid);
+  }
+  #progressMeta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 7px;
+    color: var(--dim);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+  }
+
+  #raceBox {
+    left: 50%;
+    top: 20px;
+    display: flex;
+    gap: 24px;
+    transform: translateX(-50%);
+    padding: 10px 15px;
+    color: var(--dim);
+    background: var(--glass);
+    border: 1px solid var(--line);
+    backdrop-filter: blur(12px);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  #raceBox span { white-space: nowrap; }
+  #raceBox b {
+    display: block;
+    margin-top: 3px;
+    color: var(--ink);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+  }
+
+  #msg {
+    left: 50%;
+    top: 24%;
+    transform: translateX(-50%);
+    color: white;
+    font-size: clamp(38px, 6vw, 86px);
+    font-weight: 950;
+    font-style: italic;
+    letter-spacing: .08em;
+    line-height: .9;
+    text-align: center;
+    text-shadow: 0 0 42px rgba(108, 236, 255, .7);
+    white-space: nowrap;
+  }
+  #msg.warn { color: #ff8065; text-shadow: 0 0 34px rgba(255, 65, 38, .9); }
+
+  #leaderboard {
+    left: 22px;
+    top: 146px;
+    width: 226px;
+  }
+  .tower-title {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    color: var(--dim);
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: .24em;
+    text-transform: uppercase;
+  }
+  .tower-row {
+    display: grid;
+    grid-template-columns: 20px 5px 1fr auto;
+    align-items: center;
+    gap: 7px;
+    min-height: 23px;
+    padding: 3px 7px;
+    color: rgba(244,247,245,.78);
+    background: rgba(7,10,15,.48);
+    border-bottom: 1px solid rgba(255,255,255,.035);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+  }
+  .tower-row.you {
+    color: #05060a;
+    background: var(--acid);
+  }
+  .tower-row .rank { opacity: .62; }
+  .tower-row .swatch { width: 4px; height: 12px; background: var(--lab); box-shadow: 0 0 8px var(--lab); }
+  .tower-row .gap { opacity: .58; font-variant-numeric: tabular-nums; }
+
+  #telemetry {
+    right: 22px;
+    bottom: 22px;
+    width: 260px;
+    padding: 14px 15px;
+    background: linear-gradient(135deg, rgba(7,10,15,.52), rgba(7,10,15,.9));
+    border-right: 3px solid var(--cyan);
+    backdrop-filter: blur(12px);
+  }
+  #speedLine {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  #speed {
+    font-size: clamp(52px, 6vw, 84px);
+    font-weight: 950;
+    font-style: italic;
+    letter-spacing: -.07em;
+    line-height: .78;
+    font-variant-numeric: tabular-nums;
+  }
+  #speedUnit {
+    color: var(--dim);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .22em;
+    text-align: right;
+  }
+  #speedUnit b {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--acid);
+    font-size: 13px;
+    letter-spacing: .08em;
+  }
+  .barLabel {
+    display: flex;
+    justify-content: space-between;
+    margin: 8px 0 4px;
+    color: var(--dim);
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+  }
+  .bar {
+    position: relative;
+    height: 4px;
+    overflow: hidden;
+    background: rgba(255,255,255,.12);
+  }
+  .bar > i { display: block; height: 100%; transition: width .08s linear; }
+  #shieldFill { width: 100%; background: linear-gradient(90deg, var(--cyan), var(--mint)); box-shadow: 0 0 9px var(--cyan); }
+  #boostFill { width: 0; background: linear-gradient(90deg, var(--orange), var(--acid)); box-shadow: 0 0 9px var(--acid); }
+  .bar.warn > i { animation: blink .5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .22; } }
+
+  #minimap {
+    right: 18px;
+    top: 15px;
+    width: 190px;
+    height: 190px;
+    opacity: .95;
+    filter: drop-shadow(0 0 16px rgba(108,236,255,.18));
+  }
+  #muteBtn {
+    right: 22px;
+    top: 200px;
+    z-index: 13;
+    pointer-events: auto;
+    cursor: pointer;
+    padding: 7px 10px;
+    color: var(--dim);
+    background: rgba(7,10,15,.72);
+    border: 1px solid var(--line);
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: .18em;
+  }
+
+  #controlsHint {
+    left: 22px;
+    bottom: 20px;
+    color: rgba(244,247,245,.58);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  #controlsHint kbd, .panel kbd {
+    display: inline-block;
+    min-width: 22px;
+    margin: 0 2px 0 6px;
+    padding: 3px 5px;
+    color: var(--ink);
+    background: rgba(255,255,255,.1);
+    border: 1px solid rgba(255,255,255,.14);
+    font: inherit;
+    text-align: center;
+  }
+
+  /* overlays */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .overlay.show { display: flex; }
+  #menu {
+    align-items: stretch;
+    justify-content: flex-start;
+    background:
+      linear-gradient(90deg, rgba(4,6,9,.97) 0%, rgba(4,6,9,.9) 34%, rgba(4,6,9,.27) 67%, rgba(4,6,9,.52) 100%),
+      radial-gradient(circle at 74% 40%, rgba(108,236,255,.06), transparent 35%);
+  }
+  #keyArt {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: url("assets/ai-race-key-art.webp");
+    background-position: 70% center;
+    background-size: cover;
+    opacity: .78;
+    transform: scale(1.015);
+  }
+  #menu::after {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    content: "";
+    background: repeating-linear-gradient(90deg, transparent 0 11.95%, rgba(255,255,255,.025) 12%);
+    pointer-events: none;
+  }
+  #menu .panel {
+    width: min(610px, 52vw);
+    min-width: 520px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 5vh 4.6vw;
+    text-align: left;
+  }
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 3vh;
+    color: var(--acid);
+    font-size: 9px;
+    font-weight: 950;
+    letter-spacing: .34em;
+    text-transform: uppercase;
+  }
+  .eyebrow::before { width: 34px; height: 2px; background: var(--acid); content: ""; }
+  .heroTitle {
+    max-width: 580px;
+    font-size: clamp(74px, 9vw, 146px);
+    font-weight: 950;
+    font-style: italic;
+    letter-spacing: -.085em;
+    line-height: .72;
+    text-transform: uppercase;
+  }
+  .heroTitle span {
+    display: block;
+    margin-left: .62em;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(244,247,245,.72);
+  }
+  .missionLine {
+    max-width: 520px;
+    margin-top: 3.2vh;
+    color: var(--ink);
+    font-size: clamp(14px, 1.3vw, 19px);
+    font-weight: 650;
+    line-height: 1.45;
+  }
+  .missionLine strong { color: var(--acid); font-weight: 900; }
+  .briefGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    width: min(100%, 500px);
+    margin-top: 2.4vh;
+    background: rgba(255,255,255,.12);
+  }
+  .briefStat {
+    padding: 10px 12px;
+    background: rgba(5,6,10,.76);
+  }
+  .briefStat small {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--dim);
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+  }
+  .briefStat b { font-size: 13px; letter-spacing: .04em; }
+  #rosterLine {
+    width: min(100%, 500px);
+    margin-top: 2vh;
+    color: var(--dim);
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1.8;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .actionRow {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-top: 2.7vh;
+  }
+  .btn {
+    position: relative;
+    min-width: 220px;
+    overflow: hidden;
+    pointer-events: auto;
+    cursor: pointer;
+    padding: 15px 24px;
+    color: #05060a;
+    background: var(--acid);
+    border: 0;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: .24em;
+    text-transform: uppercase;
+    box-shadow: 0 0 30px rgba(223,255,71,.18);
+  }
+  .btn::after {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.65) 49%, transparent 63%);
+    content: "";
+    transform: translateX(-120%);
+    transition: transform .4s ease;
+  }
+  .btn:hover::after { transform: translateX(120%); }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.ghost {
+    min-width: 150px;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--line);
+    box-shadow: none;
+  }
+  .inputNote {
+    color: var(--dim);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .12em;
+    line-height: 1.7;
+    text-transform: uppercase;
+  }
+  .inputNote b { color: var(--ink); }
+
+  #results, #pauseOv {
+    background: radial-gradient(circle at 50% 35%, rgba(16,30,28,.82), rgba(3,4,7,.96));
+    backdrop-filter: blur(14px);
+  }
+  #results .panel, #pauseOv .panel {
+    width: min(820px, 92vw);
+    max-height: 90vh;
+    overflow: auto;
+    padding: 40px;
+    text-align: center;
+    background: rgba(7,10,15,.78);
+    border-top: 3px solid var(--acid);
+  }
+  .panel h2 {
+    margin-bottom: 8px;
+    font-size: clamp(38px, 6vw, 72px);
+    font-weight: 950;
+    font-style: italic;
+    letter-spacing: -.04em;
+    text-transform: uppercase;
+  }
+  .resultsSub {
+    margin-bottom: 24px;
+    color: var(--dim);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .24em;
+    text-transform: uppercase;
+  }
+  table { width: 100%; margin: 0 auto 24px; border-collapse: collapse; font-size: 12px; }
+  td, th { padding: 8px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); }
+  th { color: var(--dim); font-size: 8px; letter-spacing: .2em; text-transform: uppercase; }
+  tr.you td { color: #05060a; background: var(--acid); font-weight: 900; }
+
+  /* touch controls */
+  #touch { position: fixed; inset: 0; z-index: 20; display: none; pointer-events: none; }
+  @media (pointer: coarse) { #touch { display: block; } }
+  .tbtn {
+    position: absolute;
+    bottom: 3.5vh;
+    width: min(17vw, 92px);
+    height: min(17vw, 92px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    color: var(--ink);
+    background: rgba(7,10,15,.48);
+    border: 1px solid rgba(255,255,255,.24);
+    border-radius: 50%;
+    font-size: 22px;
+    font-weight: 900;
+    backdrop-filter: blur(8px);
+  }
+  .tbtn.on { color: #05060a; background: var(--acid); }
+  #tl { left: 4vw; }
+  #tr { left: 23vw; }
+  #tb { right: 23vw; }
+  #tg { right: 4vw; }
+  #tboost {
+    right: 5vw;
+    bottom: calc(3.5vh + min(21vw, 114px));
+    width: min(13vw, 72px);
+    height: min(13vw, 72px);
+    color: var(--acid);
+    border-color: rgba(223,255,71,.5);
+    font-size: 9px;
+    letter-spacing: .08em;
+  }
+  #tdrift {
+    left: 5vw;
+    bottom: calc(3.5vh + min(21vw, 114px));
+    width: min(13vw, 72px);
+    height: min(13vw, 72px);
+    color: var(--cyan);
+    border-color: rgba(108,236,255,.5);
+    font-size: 9px;
+    letter-spacing: .08em;
+  }
+
+  @media (max-width: 900px) {
+    #menu { background: linear-gradient(0deg, rgba(4,6,9,.98) 0%, rgba(4,6,9,.82) 58%, rgba(4,6,9,.2) 100%); }
+    #keyArt { background-position: 65% 20%; background-size: auto 72%; background-repeat: no-repeat; opacity: .7; }
+    #menu .panel {
+      width: 100%;
+      min-width: 0;
+      justify-content: flex-end;
+      padding: 5vh 7vw;
+      background: linear-gradient(0deg, rgba(4,6,9,1) 0%, rgba(4,6,9,.9) 58%, transparent 100%);
+    }
+    .eyebrow { margin-bottom: 2vh; }
+    .heroTitle { font-size: clamp(62px, 18vw, 112px); }
+    .missionLine { margin-top: 2vh; font-size: 14px; }
+    .briefGrid, #rosterLine { display: none; }
+    .actionRow { width: 100%; margin-top: 2vh; }
+    .btn { min-width: 0; flex: 1; }
+    .inputNote { display: none; }
+    #missionBar { left: 10px; top: 10px; width: 50vw; padding: 9px 10px; }
+    #missionEyebrow { font-size: 7px; }
+    #sectorName { font-size: 16px; }
+    #raceBox { left: auto; right: 10px; top: 10px; gap: 9px; transform: none; padding: 7px 8px; }
+    #raceBox span:first-child, #raceBox span:last-child { display: none; }
+    #raceBox b { font-size: 12px; }
+    #leaderboard, #controlsHint, #minimap, #muteBtn { display: none; }
+    #telemetry {
+      right: 10px;
+      bottom: calc(3.5vh + min(39vw, 170px));
+      width: 150px;
+      padding: 10px;
+      border-right-width: 2px;
+    }
+    #speed { font-size: 48px; }
+    #speedUnit { font-size: 7px; }
+    #speedUnit b { font-size: 10px; }
+    .barLabel { font-size: 7px; }
+    #msg { top: 20%; font-size: 36px; }
+  }
+
+  @media (max-height: 680px) and (min-width: 700px) {
+    .heroTitle { font-size: 84px; }
+    .eyebrow { margin-bottom: 2vh; }
+    .missionLine { margin-top: 2.2vh; font-size: 14px; }
+    .briefGrid { margin-top: 1.6vh; }
+    #rosterLine { margin-top: 1.2vh; }
+    .actionRow { margin-top: 1.8vh; }
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<section class="hud" id="missionBar" aria-label="mission progress">
+  <div id="missionEyebrow">Orbital transfer // sector <span id="sectorIndex">01</span></div>
+  <div id="sectorName">Helios Launch Array</div>
+  <div id="progressRail"><i id="progressFill"></i></div>
+  <div id="progressMeta"><span>Earthside</span><span id="distanceLeft">2.7 KM TO COMPUTE</span><span>Orbit</span></div>
+</section>
+
+<div class="hud" id="raceBox">
+  <span>Run<b id="lap">1/1</b></span>
+  <span>Position<b id="pos">11/11</b></span>
+  <span>Mission Time<b id="time">0:00.00</b></span>
+  <span>Data Cores<b id="best">0/8</b></span>
+</div>
+
+<div class="hud" id="msg"></div>
+<div class="hud" id="leaderboard" aria-label="live lab order"></div>
+
+<section class="hud" id="telemetry" aria-label="vehicle telemetry">
+  <div id="speedLine">
+    <div id="speed">0</div>
+    <div id="speedUnit"><b>OPENAI // 01</b>TOKENS / SEC</div>
+  </div>
+  <div class="barLabel"><span>Thermal Shield</span><span id="shieldPct">100%</span></div>
+  <div class="bar" id="shieldBar"><i id="shieldFill"></i></div>
+  <div class="barLabel"><span>Inference Burst · Shift</span><span id="boostPct">0%</span></div>
+  <div class="bar"><i id="boostFill"></i></div>
+</section>
+
+<canvas class="hud" id="minimap" width="380" height="380"></canvas>
+<button class="hud" id="muteBtn" aria-label="toggle sound">SOUND // ON</button>
+<div class="hud" id="controlsHint">
+  <kbd>W</kbd> thrust <kbd>A D</kbd> steer <kbd>S</kbd> brake <kbd>SPACE</kbd> drift <kbd>SHIFT</kbd> burst <kbd>C</kbd> camera <kbd>R</kbd> restart
+</div>
+
+<main class="overlay show" id="menu">
+  <div id="keyArt"></div>
+  <section class="panel" aria-labelledby="menuTitle">
+    <div class="eyebrow">OpenAI Build Week // Race protocol 01</div>
+    <h1 class="heroTitle" id="menuTitle">The AI<span>Race</span></h1>
+    <p class="missionLine">
+      Twelve frontier labs. One unclaimed orbital data center.
+      <strong>First intelligence to HELIOS owns the next era of compute.</strong>
+    </p>
+    <div class="briefGrid" aria-label="race facts">
+      <div class="briefStat"><small>Course</small><b>2.7 KM ORBITAL RIBBON</b></div>
+      <div class="briefStat"><small>Field</small><b>12 AI LABS</b></div>
+      <div class="briefStat"><small>Objective</small><b>CLAIM HELIOS</b></div>
+    </div>
+    <div id="rosterLine">
+      OpenAI // Anthropic // Google DeepMind // xAI // Meta // DeepSeek //
+      Mistral // Qwen // Moonshot // Cohere // MiniMax // Microsoft AI
+    </div>
+    <div class="actionRow">
+      <button class="btn" id="startBtn">Initiate launch</button>
+      <div class="inputNote"><b>WASD</b> drive<br><b>Shift</b> inference burst<br><b>Gamepad + touch</b> ready</div>
+    </div>
+  </section>
+</main>
+
+<section class="overlay" id="results" aria-labelledby="resTitle">
+  <div class="panel">
+    <h2 id="resTitle">Compute Claimed</h2>
+    <div class="resultsSub" id="resultsSub">Helios orbital array // final classification</div>
+    <table>
+      <thead><tr><th>#</th><th>Lab</th><th>Data Cores</th><th>Arrival</th></tr></thead>
+      <tbody id="resBody"></tbody>
+    </table>
+    <button class="btn" id="againBtn">Run it back</button>
+  </div>
+</section>
+
+<section class="overlay" id="pauseOv" aria-labelledby="pauseTitle">
+  <div class="panel">
+    <h2 id="pauseTitle">Link Paused</h2>
+    <div class="resultsSub">Orbital guidance frozen</div>
+    <button class="btn" id="resumeBtn">Resume uplink</button>
+    <button class="btn ghost" id="pauseRestart">Abort + restart</button>
+  </div>
+</section>
+
+<div id="touch" aria-label="touch controls">
+  <div class="tbtn" id="tl" aria-label="steer left">◀</div>
+  <div class="tbtn" id="tr" aria-label="steer right">▶</div>
+  <div class="tbtn" id="tb" aria-label="brake">▼</div>
+  <div class="tbtn" id="tg" aria-label="thrust">▲</div>
+  <div class="tbtn" id="tdrift" aria-label="drift">DRIFT</div>
+  <div class="tbtn" id="tboost" aria-label="inference burst">BURST</div>
+</div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>

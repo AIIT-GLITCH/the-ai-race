@@ -1,0 +1,19 @@
+{
+  "name": "the-ai-race-orbit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A twelve-lab anti-gravity sprint to the first orbital AI data center.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --input-type=module --check < game.js && node scripts/check.js",
+    "test:browser": "node scripts/browser-smoke.mjs",
+    "test:mobile": "node scripts/mobile-smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.61.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
