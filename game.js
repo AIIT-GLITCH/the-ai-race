@@ -940,7 +940,9 @@ function updateStartLights() {
 // HELIOS: a monumental orbital data center wrapped around the finish vector.
 const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
 {
-  const idx = wrapI(START_IDX + Math.round(18 / STEP));
+  // Put the destination just before the finish seam: it stays behind the
+  // launch camera, then becomes the final structure the player flies through.
+  const idx = wrapI(START_IDX - Math.round(34 / STEP));
   const p = track.pts[idx], t = track.tangents[idx], r = track.rights[idx], u = track.ups[idx];
   const station = new THREE.Group();
   station.name = 'HELIOS_STATION';

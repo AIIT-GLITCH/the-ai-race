@@ -54,6 +54,9 @@ for (const expected of profiles) {
     race.testMode(true);
     race.skipCountdown();
     race.teleport(race.track.length * 0.12, 0, 0, 185);
+    // First render may only warm asynchronous browser/GPU programs on a fresh
+    // software context. The second frame is the deterministic measured frame.
+    race.renderOnce();
     race.renderOnce();
     const graphics = race.graphics();
     graphics.gateSafety = [1, 2].map(index => {
