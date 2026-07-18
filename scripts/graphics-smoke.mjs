@@ -56,7 +56,7 @@ for (const expected of profiles) {
     race.teleport(race.track.length * 0.12, 0, 0, 185);
     race.renderOnce();
     const graphics = race.graphics();
-    graphics.gateAlignment = [1, 2].map(index => {
+    graphics.gateSafety = [1, 2].map(index => {
       const gate = race.scene.getObjectByName(`LUNAR_SLINGSHOT_GATE_${index}`);
       if (!gate) return null;
       const normal = new race.THREE.Vector3(0, 0, 1)
@@ -65,8 +65,29 @@ for (const expected of profiles) {
       const tangent = new race.THREE.Vector3(
         ...race.frameAt(race.track.length * gate.userData.trackFraction).t,
       ).normalize();
-      return Math.abs(normal.dot(tangent));
+      const glow = gate.parent.children.find(object =>
+        object !== gate &&
+        object.isMesh &&
+        object.geometry?.type === 'TorusGeometry' &&
+        Math.abs(object.geometry.parameters.radius - (gate.geometry.parameters.radius - 1)) < .001
+      );
+      return {
+        alignment: Math.abs(normal.dot(tangent)),
+        radius: gate.geometry.parameters.radius,
+        depthTest: glow?.material?.depthTest === true,
+      };
     });
+    const station = race.scene.getObjectByName('HELIOS_STATION');
+    if (station) {
+      const trackPoint = new race.THREE.Vector3(
+        ...race.frameAt(race.track.length * station.userData.trackFraction).p,
+      );
+      graphics.heliosApertureClear = station.children
+        .filter(object => object.name.startsWith('HELIOS_RACK_'))
+        .every(rack => new race.THREE.Box3().setFromObject(rack).distanceToPoint(trackPoint) > 2);
+    } else {
+      graphics.heliosApertureClear = false;
+    }
     return graphics;
   });
   await page.screenshot({ path: `.qa/graphics-${expected.query}.png` });
@@ -83,8 +104,14 @@ for (const expected of profiles) {
   if (!Number.isFinite(graphics.triangles) || graphics.triangles < 10_000) {
     pageErrors.push(`invalid triangle count: ${graphics.triangles}`);
   }
-  if (graphics.gateAlignment.some(value => value === null || value < .999)) {
-    pageErrors.push(`track gate alignment invalid: ${graphics.gateAlignment.join(', ')}`);
+  if (graphics.gateSafety.some(gate => gate === null || gate.alignment < .999)) {
+    pageErrors.push(`track gate alignment invalid: ${JSON.stringify(graphics.gateSafety)}`);
+  }
+  if (graphics.gateSafety.some(gate => gate && (gate.radius > 20 || !gate.depthTest))) {
+    pageErrors.push(`track gate visual safety invalid: ${JSON.stringify(graphics.gateSafety)}`);
+  }
+  if (!graphics.heliosApertureClear) {
+    pageErrors.push('HELIOS racing aperture is obstructed');
   }
 
   if (expected.name === 'ULTRA') {

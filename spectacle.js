@@ -305,16 +305,16 @@ export function createSpectacle({
     const ringGlow = new THREE.MeshBasicMaterial({
       color: 0x6cecff,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.62,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       fog: false,
     });
     ringGlow.color.multiplyScalar(1.9);
     const slingGates = [
-      { fraction: .405, radius: 54, tube: 2.8, roll: -.055 },
-      { fraction: .465, radius: 72, tube: 1.75, roll: .072 },
+      { fraction: .405, radius: halfWidth + 4, tube: 1.35, roll: -.055 },
+      { fraction: .465, radius: halfWidth + 7, tube: .92, roll: .072 },
     ];
     slingGates.forEach(({ fraction, radius, tube, roll }, gateIndex) => {
       const trackIndex = Math.floor(fraction * N);
@@ -334,7 +334,6 @@ export function createSpectacle({
       const line = new THREE.Mesh(new THREE.TorusGeometry(radius - 1, Math.max(.34, tube * .14), 6, 160), ringGlow);
       line.position.copy(ring.position);
       line.quaternion.copy(ring.quaternion);
-      line.renderOrder = 7;
       root.add(line);
     });
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({

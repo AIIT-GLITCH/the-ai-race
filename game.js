@@ -943,6 +943,8 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
   const idx = wrapI(START_IDX + Math.round(18 / STEP));
   const p = track.pts[idx], t = track.tangents[idx], r = track.rights[idx], u = track.ups[idx];
   const station = new THREE.Group();
+  station.name = 'HELIOS_STATION';
+  station.userData.trackFraction = idx / N;
   const basis = new THREE.Matrix4().makeBasis(
     new THREE.Vector3(-r[0], -r[1], -r[2]),
     new THREE.Vector3(u[0], u[1], u[2]),
@@ -977,11 +979,10 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
       opacity: .82,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      depthTest: true,
       fog: false,
     }),
   );
-  halo.material.depthTest = false;
-  halo.renderOrder = 7;
   station.add(halo);
   const ringEnergy = new THREE.Mesh(
     new THREE.TorusGeometry(42, .64, 8, 112),
@@ -991,17 +992,16 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
       opacity: .92,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       fog: false,
     }),
   );
   ringEnergy.material.color.multiplyScalar(1.7);
-  ringEnergy.renderOrder = 7;
   station.add(ringEnergy);
   const nodeGeometry = new THREE.SphereGeometry(.78, 10, 7);
   const nodeMaterial = new THREE.MeshBasicMaterial({
     color: 0xdfff47,
-    depthTest: false,
+    depthTest: true,
     depthWrite: false,
     fog: false,
   });
@@ -1014,25 +1014,28 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
     ringNodes.setMatrixAt(i, nodeMatrix);
   }
   ringNodes.instanceMatrix.needsUpdate = true;
-  ringNodes.renderOrder = 8;
   station.add(ringNodes);
   const stationGlow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex,
     color: 0x65dfff,
     transparent: true,
-    opacity: .26,
+    opacity: .16,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     fog: false,
   }));
-  stationGlow.scale.set(120, 120, 1);
+  stationGlow.scale.set(90, 90, 1);
   stationGlow.position.z = -3;
-  stationGlow.renderOrder = 6;
   station.add(stationGlow);
   for (let i = 0; i < 8; i++) {
+    // Keep the lower center of the HELIOS ring as a clean racing aperture.
+    // Rack 6 would otherwise cancel the station's +28m lift and sit directly
+    // on the deck, forcing the player and camera through luminous geometry.
+    if (i === 6) continue;
     const a = (i / 8) * Math.PI * 2;
     const rack = new THREE.Mesh(new THREE.BoxGeometry(6.2, 15.5, 11.8), i % 2 ? metal : white);
+    rack.name = `HELIOS_RACK_${i}`;
     rack.position.set(Math.cos(a) * 28, Math.sin(a) * 28, 4);
     rack.rotation.z = a + Math.PI / 2;
     station.add(rack);
