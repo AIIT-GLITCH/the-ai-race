@@ -12,6 +12,12 @@ export default {
       url.pathname = INDEX_PATH;
       response = await env.ASSETS.fetch(new Request(url, request));
     }
+    if (response.status === 404 && url.pathname === INDEX_PATH) {
+      return new Response('The AI Race client bundle is unavailable.', {
+        status: 503,
+        headers: { 'content-type': 'text/plain; charset=utf-8' },
+      });
+    }
     return response;
   },
 };
