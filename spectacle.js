@@ -199,8 +199,12 @@ export function createSpectacle({
   const basisAt = (index, out = quaternion) => {
     const i = ((index % N) + N) % N;
     const r = track.rights[i], u = track.ups[i], t = track.tangents[i];
+    // Track-space stores r=t×u for its steering convention. That frame is
+    // reflected: r×u=-t, and cannot be represented by a quaternion. Negating
+    // the lateral axis produces a proper rigid frame while preserving
+    // Y=surface-up and Z=forward.
     basis.makeBasis(
-      local.set(r[0], r[1], r[2]),
+      local.set(-r[0], -r[1], -r[2]),
       position.set(u[0], u[1], u[2]),
       scale.set(t[0], t[1], t[2]),
     );
@@ -268,8 +272,10 @@ export function createSpectacle({
     root.add(stars);
   }
 
-  // Monumental lunar relay: a textured moon, two orbital accelerator rings,
-  // and an HDR halo. It is intentionally hundreds of metres across.
+  // Monumental lunar relay: a textured moon plus two true track-spanning
+  // slingshot gates. Every gate's torus lives in local XY, so mapping
+  // X->track right, Y->track up, Z->track tangent makes its plane rigorously
+  // perpendicular to the racing line.
   let relayMoon;
   {
     const texture = lunarTexture(THREE);
@@ -306,17 +312,31 @@ export function createSpectacle({
       fog: false,
     });
     ringGlow.color.multiplyScalar(1.9);
-    for (const [radius, tube, tiltX, tiltY] of [[470, 4.8, 1.08, .18], [520, 1.8, .83, -.38]]) {
+    const slingGates = [
+      { fraction: .405, radius: 54, tube: 2.8, roll: -.055 },
+      { fraction: .465, radius: 72, tube: 1.75, roll: .072 },
+    ];
+    slingGates.forEach(({ fraction, radius, tube, roll }, gateIndex) => {
+      const trackIndex = Math.floor(fraction * N);
+      const gatePosition = pointAt(trackIndex, 0, .45, 0, new THREE.Vector3());
+      const gateQuaternion = basisAt(trackIndex, new THREE.Quaternion());
+      // Roll is around local Z (the tangent), so it adds visual rhythm without
+      // ever tipping the ring plane into the direction of travel.
+      gateQuaternion.multiply(
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll),
+      );
       const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 10, 160), ringMetal);
-      ring.position.copy(relayMoon.position);
-      ring.rotation.set(tiltX, tiltY, .35);
+      ring.name = `LUNAR_SLINGSHOT_GATE_${gateIndex + 1}`;
+      ring.userData.trackFraction = fraction;
+      ring.position.copy(gatePosition);
+      ring.quaternion.copy(gateQuaternion);
       root.add(ring);
       const line = new THREE.Mesh(new THREE.TorusGeometry(radius - 1, Math.max(.34, tube * .14), 6, 160), ringGlow);
       line.position.copy(ring.position);
-      line.rotation.copy(ring.rotation);
+      line.quaternion.copy(ring.quaternion);
       line.renderOrder = 7;
       root.add(line);
-    }
+    });
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({
       map: radialTexture(THREE, 'rgba(180,225,255,.95)', 'rgba(85,170,255,.16)', 'rgba(0,0,0,0)'),
       color: 0x8bcaff,

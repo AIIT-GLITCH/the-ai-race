@@ -55,7 +55,19 @@ for (const expected of profiles) {
     race.skipCountdown();
     race.teleport(race.track.length * 0.12, 0, 0, 185);
     race.renderOnce();
-    return race.graphics();
+    const graphics = race.graphics();
+    graphics.gateAlignment = [1, 2].map(index => {
+      const gate = race.scene.getObjectByName(`LUNAR_SLINGSHOT_GATE_${index}`);
+      if (!gate) return null;
+      const normal = new race.THREE.Vector3(0, 0, 1)
+        .applyQuaternion(gate.getWorldQuaternion(new race.THREE.Quaternion()))
+        .normalize();
+      const tangent = new race.THREE.Vector3(
+        ...race.frameAt(race.track.length * gate.userData.trackFraction).t,
+      ).normalize();
+      return Math.abs(normal.dot(tangent));
+    });
+    return graphics;
   });
   await page.screenshot({ path: `.qa/graphics-${expected.query}.png` });
 
@@ -70,6 +82,9 @@ for (const expected of profiles) {
   }
   if (!Number.isFinite(graphics.triangles) || graphics.triangles < 10_000) {
     pageErrors.push(`invalid triangle count: ${graphics.triangles}`);
+  }
+  if (graphics.gateAlignment.some(value => value === null || value < .999)) {
+    pageErrors.push(`track gate alignment invalid: ${graphics.gateAlignment.join(', ')}`);
   }
 
   if (expected.name === 'ULTRA') {

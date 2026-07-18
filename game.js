@@ -899,7 +899,7 @@ function updateStartLights() {
     const p = track.pts[idx], t = track.tangents[idx], r = track.rights[idx], u = track.ups[idx];
     const group = new THREE.Group();
     const basis = new THREE.Matrix4().makeBasis(
-      new THREE.Vector3(r[0], r[1], r[2]),
+      new THREE.Vector3(-r[0], -r[1], -r[2]),
       new THREE.Vector3(u[0], u[1], u[2]),
       new THREE.Vector3(t[0], t[1], t[2]));
     group.quaternion.setFromRotationMatrix(basis);
@@ -944,7 +944,7 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
   const p = track.pts[idx], t = track.tangents[idx], r = track.rights[idx], u = track.ups[idx];
   const station = new THREE.Group();
   const basis = new THREE.Matrix4().makeBasis(
-    new THREE.Vector3(r[0], r[1], r[2]),
+    new THREE.Vector3(-r[0], -r[1], -r[2]),
     new THREE.Vector3(u[0], u[1], u[2]),
     new THREE.Vector3(t[0], t[1], t[2]));
   station.quaternion.setFromRotationMatrix(basis);
