@@ -35,6 +35,11 @@ npm start
 
 Standard gamepads and full touch controls are supported.
 
+For a judged demo, `?showcase=1` opens a hand-staged Pro showdown as Sam:
+OPENAI sits 17 m behind ANTHROPIC with a wake lock and slingshot armed near the
+finish. Add `&autostart=1` to launch it immediately. Showcase runs never read
+or overwrite personal-best ghost data.
+
 ## Race setup
 
 - **Rookie:** calmer rivals, stronger grip and edge assistance, faster shield
@@ -48,9 +53,21 @@ Standard gamepads and full touch controls are supported.
   Sam option changes the ship credential, HUD, and results presentation only.
   It uses no likeness, endorsement claim, or cloned voice.
 
-Preferences persist locally, personal bests are tracked separately for each
-difficulty, and the results screen supports both immediate replay and returning
-to setup.
+Preferences persist locally. Personal bests and the deterministic MODEL N-1
+hologram are tracked separately for each difficulty-and-contract pairing. The
+results screen compares all six sectors, supports a one-tap `Race My PB`
+rematch, immediate replay, and returning to setup.
+
+## Mission contracts
+
+- **Sprint:** win the race.
+- **Full Payload:** collect all eight data cores.
+- **Clean Uplink:** finish without wall or rival contact.
+- **Slingshot Master:** deploy at least two charged slingshots.
+
+Every contract creates its own progression lane: complete a first run to record
+MODEL N-1, then race the non-colliding holographic replay with a live time delta
+and sector-by-sector gains or losses.
 
 ## The four-game fusion
 
@@ -79,17 +96,20 @@ to setup.
   shield puts the craft into limp mode, where inference bursts cannot fire.
 - A colossal procedural orbital data center, Earth limb, compute monoliths,
   solar arrays, sector gates, data-stream tunnel, aurora, particles, and bloom.
-- A priority-driven orbital race-control narrator calls stable lead changes,
-  overtakes, sectors, wake locks, slingshots, core pickups, damage, final
-  approach, and classification with baked generic speech, radio processing,
-  captions, and music-bed ducking. Compressed clips prefetch during setup;
-  launch-critical calls decode silently while the menu is open, and the rest
-  decode in small idle-time batches for low-latency playback without stealing
-  the opening race frames.
+- A 7.6-second HELIOS takeover sequence gives the winner a real payoff:
+  ownership handshake, rack-light cascade, array-claim banner, orbital energy
+  beam, expanding claim rings, and a dedicated station-to-hero camera cut.
+- A priority-driven orbital race-control narrator composes exact calls from a
+  predecoded 49-clause generic speech sprite: named leader changes, named
+  passes and losses, slingshot targets, sectors, cores, damage, and a precise
+  winner-plus-margin HELIOS claim. Radio processing, captions, music ducking,
+  and deterministic browser-speech fallback keep it immediate without a cloud
+  request or identity-linked voice.
 - Four cameras, spatial Doppler rival engines, generative sector-aware score,
   start tones, boost roar, wind, and wall scrape.
 - Desktop, keyboard, gamepad, portrait mobile, pause, restart, mute, results,
-  contextual live gaps, minimap, per-difficulty records, and no-refresh replay.
+  contextual live gaps, minimap, per-contract records, MODEL N-1 ghost racing,
+  and no-refresh replay.
 
 ## Cinematic rendering pass
 
@@ -113,6 +133,7 @@ calls. Automated checks cap the launch at 280 draw calls and the course at 220.
 ```bash
 npm run check
 npm run build
+npm run test:showdown # HELIOS, contracts, exact narration, and PB ghost
 npm run test:browser  # requires Playwright/Chromium
 npm run test:options
 npm run test:graphics

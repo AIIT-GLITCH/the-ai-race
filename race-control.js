@@ -1,3 +1,5 @@
+import { BROADCAST_CLAUSE_TIMINGS } from './assets/race-control/broadcast-clauses.js';
+
 /*
  * THE AI RACE // ORBITAL RACE CONTROL
  *
@@ -21,6 +23,92 @@ const authoredClip = (file, text) => Object.freeze({
   src: `${CLIP_ROOT}/${file}`,
   text,
 });
+
+export const BROADCAST_LABS = Object.freeze([
+  'OPENAI',
+  'ANTHROPIC',
+  'DEEPMIND',
+  'xAI',
+  'META',
+  'DEEPSEEK',
+  'MISTRAL',
+  'QWEN',
+  'MOONSHOT',
+  'COHERE',
+  'MINIMAX',
+  'MICROSOFT',
+]);
+
+const ORDINALS = Object.freeze([
+  '',
+  'first',
+  'second',
+  'third',
+  'fourth',
+  'fifth',
+  'sixth',
+  'seventh',
+  'eighth',
+  'ninth',
+  'tenth',
+  'eleventh',
+  'twelfth',
+]);
+
+const DIGIT_WORDS = Object.freeze([
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+]);
+
+export const BROADCAST_CLAUSE_TEXT = Object.freeze({
+  ...Object.fromEntries(BROADCAST_LABS.map(name => [
+    `clause.lab.${name}`,
+    spokenLab(name),
+  ])),
+  ...Object.fromEntries(ORDINALS.slice(1).map((word, rank) => [
+    `clause.rank.${rank + 1}`,
+    word,
+  ])),
+  ...Object.fromEntries(DIGIT_WORDS.map((word, digit) => [
+    `clause.digit.${digit}`,
+    word,
+  ])),
+  'clause.openai-passes': 'OpenAI passes',
+  'clause.passes-openai': 'passes OpenAI',
+  'clause.openai-drops-to': 'OpenAI drops to',
+  'clause.for': 'for',
+  'clause.takes-lead-from': 'takes the lead from',
+  'clause.slingshot-deployed': 'Slingshot deployed',
+  'clause.openai-attacks': 'OpenAI attacks',
+  'clause.helios-online': 'HELIOS online',
+  'clause.openai-wins': 'OpenAI wins the race to HELIOS',
+  'clause.openai-wins-by': 'OpenAI wins by',
+  'clause.claims-helios': 'claims HELIOS',
+  'clause.openai-finishes': 'OpenAI finishes',
+  'clause.point': 'point',
+  'clause.seconds': 'seconds',
+  'clause.back': 'back',
+});
+
+const BROADCAST_CLAUSE_CLIPS = Object.freeze(Object.fromEntries(
+  Object.entries(BROADCAST_CLAUSE_TEXT).map(([clipId, text]) => [
+    clipId,
+    Object.freeze({
+      src: `${CLIP_ROOT}/broadcast-clauses.mp3`,
+      text,
+      offset: BROADCAST_CLAUSE_TIMINGS[clipId][0],
+      duration: BROADCAST_CLAUSE_TIMINGS[clipId][1],
+    }),
+  ]),
+));
 
 export const DEFAULT_RACE_CONTROL_CLIPS = Object.freeze({
   briefing: authoredClip(
@@ -99,6 +187,7 @@ export const DEFAULT_RACE_CONTROL_CLIPS = Object.freeze({
     'finish-loss.mp3',
     'HELIOS reached. OpenAI is classified. The race is complete.',
   ),
+  ...BROADCAST_CLAUSE_CLIPS,
 });
 
 const DEFAULT_SECTORS = Object.freeze([
@@ -126,6 +215,7 @@ const PRIORITY = Object.freeze({
   sector: 70,
   final: 94,
   finish: 100,
+  claim: 101,
 });
 
 const COOLDOWN = Object.freeze({
@@ -144,6 +234,7 @@ const COOLDOWN = Object.freeze({
   sector: 5,
   final: 20,
   finish: 60,
+  claim: 60,
 });
 
 const STALE_AFTER = Object.freeze({
@@ -162,6 +253,7 @@ const STALE_AFTER = Object.freeze({
   sector: 13,
   final: 18,
   finish: 60,
+  claim: 60,
 });
 
 function clamp(value, min, max) {
@@ -191,6 +283,82 @@ function estimateSpeechMs(text) {
   return clamp(650 + words * 300, 1500, 6200);
 }
 
+export function formatBroadcastOrdinal(rank) {
+  return ORDINALS[clamp(Math.round(rank || 0), 1, ORDINALS.length - 1)] || `${rank}th`;
+}
+
+export function formatBroadcastMargin(seconds) {
+  if (!Number.isFinite(seconds)) return null;
+  return `${Math.max(0, seconds).toFixed(2)} seconds`;
+}
+
+function clause(clipId, gapMs = 18) {
+  return Object.freeze({ clipId, gapMs });
+}
+
+function program(...segments) {
+  return Object.freeze(segments.map(segment => {
+    if (typeof segment === 'string') return clause(segment);
+    if (Array.isArray(segment)) return clause(segment[0], segment[1]);
+    return clause(segment.clipId, segment.gapMs);
+  }));
+}
+
+function labClause(name) {
+  return `clause.lab.${name}`;
+}
+
+function marginProgram(seconds) {
+  const fixed = Math.max(0, seconds).toFixed(2);
+  const segments = [];
+  for (const character of fixed) {
+    segments.push(character === '.'
+      ? clause('clause.point', 16)
+      : clause(`clause.digit.${character}`, 8));
+  }
+  segments.push(clause('clause.seconds', 24));
+  return segments;
+}
+
+const LAB_CLAUSES = Object.freeze(BROADCAST_LABS.map(labClause));
+const RANK_CLAUSES = Object.freeze(
+  ORDINALS.slice(1).map((_word, rank) => `clause.rank.${rank + 1}`),
+);
+const MARGIN_CLAUSES = Object.freeze([
+  ...DIGIT_WORDS.map((_word, digit) => `clause.digit.${digit}`),
+  'clause.point',
+  'clause.seconds',
+]);
+
+function warmDependencies(clipId) {
+  if (clipId === 'rank.up' || String(clipId).startsWith('rank.up.')) {
+    return ['clause.openai-passes', 'clause.for', ...LAB_CLAUSES, ...RANK_CLAUSES];
+  }
+  if (clipId === 'rank.down' || String(clipId).startsWith('rank.down.')) {
+    return ['clause.passes-openai', 'clause.openai-drops-to', ...LAB_CLAUSES, ...RANK_CLAUSES];
+  }
+  if (clipId === 'slingshot.fire') {
+    return ['clause.slingshot-deployed', 'clause.openai-attacks', ...LAB_CLAUSES];
+  }
+  if (clipId === 'finish.win' || clipId === 'finish.loss' || clipId === 'claim') {
+    return [
+      'clause.helios-online',
+      'clause.openai-wins',
+      'clause.openai-wins-by',
+      'clause.claims-helios',
+      'clause.openai-finishes',
+      'clause.back',
+      ...LAB_CLAUSES,
+      ...RANK_CLAUSES,
+      ...MARGIN_CLAUSES,
+    ];
+  }
+  if (String(clipId).startsWith('leader.')) {
+    return ['clause.takes-lead-from', ...LAB_CLAUSES];
+  }
+  return [];
+}
+
 function makeEvent(kind, time, text, options = {}) {
   return {
     id: options.id || `${kind}.${Math.round(time * 1000)}`,
@@ -203,6 +371,7 @@ function makeEvent(kind, time, text, options = {}) {
     expiresAt: time + (options.staleAfter ?? STALE_AFTER[kind] ?? 8),
     interrupt: Boolean(options.interrupt),
     meta: options.meta || {},
+    audioProgram: options.audioProgram || null,
   };
 }
 
@@ -216,7 +385,7 @@ function defaultTimer(fn, delay) {
  * Snapshot shape:
  * {
  *   phase, time, progress,
- *   player: { rank, packets, drafting, shield, limp, hitWall,
+ *   player: { name, rank, finishTime, packets, drafting, shield, limp, hitWall,
  *             impactSerial, slingshotReady, slingshotReadySerial,
  *             slingshotSerial, draftTarget, finished },
  *   order: [{ name, progress, finished, finishTime }]
@@ -245,6 +414,7 @@ export class RaceControlDirector {
     this.leaderStableFor = options.leaderStableFor ?? 1.25;
     this.rankStableFor = options.rankStableFor ?? 0.72;
     this.draftStableFor = options.draftStableFor ?? 0.7;
+    this.finishMarginWait = options.finishMarginWait ?? 4.15;
     this.maxHistory = options.maxHistory ?? 80;
     this.muted = Boolean(options.muted);
     this.run = 0;
@@ -268,6 +438,7 @@ export class RaceControlDirector {
       decodes: 0,
       failures: 0,
       decodedStarts: 0,
+      programStarts: 0,
       lastDecodedStartLatencyMs: null,
     };
     this.currentRequestedAt = null;
@@ -292,6 +463,9 @@ export class RaceControlDirector {
     this.prevHitWall = Boolean(snapshot?.player?.hitWall);
     this.prevImpactSerial = snapshot?.player?.impactSerial || 0;
     this.prevFinished = Boolean(snapshot?.player?.finished);
+    this.finishCalled = false;
+    this.claimCalled = false;
+    this.finishPending = null;
     this.lastSectorIndex = this._sectorIndex(snapshot?.progress ?? 0);
     this.sectorsCalled = new Set([0]);
   }
@@ -437,12 +611,22 @@ export class RaceControlDirector {
     const previous = this.leader.committed;
     this.leader.committed = observed;
     const clipId = `leader.${observed}`;
-    const text = DEFAULT_RACE_CONTROL_CLIPS[clipId]?.text ||
-      `${spokenLab(observed)} takes the lead.`;
+    const text = previous
+      ? `${spokenLab(observed)} takes the lead from ${spokenLab(previous)}.`
+      : (DEFAULT_RACE_CONTROL_CLIPS[clipId]?.text ||
+        `${spokenLab(observed)} takes the lead.`);
+    const audioProgram = previous
+      ? program(
+        labClause(observed),
+        'clause.takes-lead-from',
+        [labClause(previous), 90],
+      )
+      : null;
     this.emit(makeEvent('leader', this.now, text, {
       id: `leader.${observed}.${Math.round(this.now * 10)}`,
       clipId,
       dedupeKey: 'leader',
+      audioProgram,
       meta: { leader: observed, previous, early: previous === null },
     }));
     return true;
@@ -474,11 +658,32 @@ export class RaceControlDirector {
 
     const kind = improved ? 'rankUp' : 'rankDown';
     const fallbackId = improved ? 'rank.up' : 'rank.down';
-    const text = DEFAULT_RACE_CONTROL_CLIPS[fallbackId].text;
+    const destination = formatBroadcastOrdinal(observed);
+    const text = rival
+      ? (improved
+        ? `OpenAI passes ${spokenLab(rival)} for ${destination}.`
+        : `${spokenLab(rival)} passes OpenAI. OpenAI drops to ${destination}.`)
+      : DEFAULT_RACE_CONTROL_CLIPS[fallbackId].text;
+    const audioProgram = rival
+      ? (improved
+        ? program(
+          'clause.openai-passes',
+          labClause(rival),
+          'clause.for',
+          [`clause.rank.${observed}`, 90],
+        )
+        : program(
+          labClause(rival),
+          ['clause.passes-openai', 90],
+          'clause.openai-drops-to',
+          [`clause.rank.${observed}`, 90],
+        ))
+      : null;
     this.emit(makeEvent(kind, this.now, text, {
       id: `rank.${previous}.${observed}.${Math.round(this.now * 10)}`,
       clipId: `rank.${improved ? 'up' : 'down'}.${observed}.${rival || 'field'}`,
       dedupeKey: 'player-rank',
+      audioProgram,
       meta: {
         previous,
         rank: observed,
@@ -520,15 +725,26 @@ export class RaceControlDirector {
     if (fireEdge) {
       // A deployment makes a still-queued armed call obsolete.
       this.queue = this.queue.filter(item => item.kind !== 'slingshotReady');
+      const text = target
+        ? `Slingshot deployed. OpenAI attacks ${spokenLab(target)}.`
+        : DEFAULT_RACE_CONTROL_CLIPS['slingshot.fire'].text;
+      const audioProgram = target
+        ? program(
+          ['clause.slingshot-deployed', 100],
+          'clause.openai-attacks',
+          [labClause(target), 90],
+        )
+        : null;
       this.emit(makeEvent(
         'slingshotFire',
         this.now,
-        DEFAULT_RACE_CONTROL_CLIPS['slingshot.fire'].text,
+        text,
         {
           id: `slingshot-fire.${this.run}.${fireSerial}`,
           clipId: 'slingshot.fire',
           dedupeKey: 'slingshot-fire',
           interrupt: true,
+          audioProgram,
           meta: { serial: fireSerial, target },
         },
       ));
@@ -655,34 +871,161 @@ export class RaceControlDirector {
     this.lastSectorIndex = index;
   }
 
-  _detectFinish(snapshot) {
-    const finished = Boolean(snapshot.player?.finished);
-    if (!finished || this.prevFinished) {
-      this.prevFinished = finished;
-      return;
-    }
-    this.prevFinished = true;
+  _finishClassification(snapshot) {
+    const order = snapshot.order || [];
     const rank = snapshot.player?.rank || 12;
     const won = rank === 1;
-    const clipId = won ? 'finish.win' : 'finish.loss';
-    this.queue.length = 0;
-    this.emit(makeEvent(
-      'finish',
-      this.now,
-      DEFAULT_RACE_CONTROL_CLIPS[clipId].text,
-      {
-        id: `finish.${won ? 'win' : rank}`,
-        clipId: won ? clipId : `finish.loss.${rank}`,
+    const playerName = snapshot.player?.name || 'OPENAI';
+    const playerEntry = order.find(entry => entry.name === playerName) || order[rank - 1] || null;
+    const winnerEntry = order[0] || null;
+    const rivalEntry = won ? order[1] || null : winnerEntry;
+    const playerFinishTime = Number.isFinite(snapshot.player?.finishTime)
+      ? snapshot.player.finishTime
+      : (Number.isFinite(playerEntry?.finishTime) ? playerEntry.finishTime : null);
+    const winnerFinishTime = Number.isFinite(winnerEntry?.finishTime)
+      ? winnerEntry.finishTime
+      : null;
+    const rivalFinishTime = Number.isFinite(rivalEntry?.finishTime)
+      ? rivalEntry.finishTime
+      : null;
+    const rawMargin = won
+      ? (playerFinishTime !== null && rivalEntry?.finished && rivalFinishTime !== null
+        ? rivalFinishTime - playerFinishTime
+        : null)
+      : (playerFinishTime !== null && winnerEntry?.finished && winnerFinishTime !== null
+        ? playerFinishTime - winnerFinishTime
+        : null);
+    const marginRaw = Number.isFinite(rawMargin) ? Math.max(0, rawMargin) : null;
+    const margin = marginRaw === null ? null : Math.round(marginRaw * 100) / 100;
+
+    return {
+      rank,
+      won,
+      winner: winnerEntry?.name || null,
+      rival: rivalEntry?.name || null,
+      playerName,
+      playerFinishTime,
+      winnerFinishTime,
+      rivalFinishTime,
+      margin,
+      marginRaw,
+      marginSeconds: margin,
+      marginText: formatBroadcastMargin(margin),
+      marginKnown: margin !== null,
+    };
+  }
+
+  _claimEvent(snapshot, force = false) {
+    const meta = this._finishClassification(snapshot);
+    if (!meta.marginKnown && !force) return null;
+
+    let text;
+    let audioProgram;
+    if (meta.won) {
+      if (meta.marginKnown) {
+        text = `HELIOS online. OpenAI wins by ${meta.marginText}.`;
+        audioProgram = program(
+          ['clause.helios-online', 105],
+          'clause.openai-wins-by',
+          ...marginProgram(meta.margin),
+        );
+      } else {
+        text = 'HELIOS online. OpenAI wins the race to HELIOS.';
+        audioProgram = program(
+          ['clause.helios-online', 105],
+          ['clause.openai-wins', 90],
+        );
+      }
+    } else {
+      const winner = spokenLab(meta.winner || 'the leader');
+      const position = formatBroadcastOrdinal(meta.rank);
+      text = meta.marginKnown
+        ? `${winner} claims HELIOS. OpenAI finishes ${position}, ${meta.marginText} back.`
+        : `${winner} claims HELIOS. OpenAI finishes ${position}.`;
+      audioProgram = program(
+        labClause(meta.winner || ''),
+        ['clause.claims-helios', 105],
+        'clause.openai-finishes',
+        [`clause.rank.${meta.rank}`, meta.marginKnown ? 70 : 90],
+        ...(meta.marginKnown ? [...marginProgram(meta.margin), ['clause.back', 90]] : []),
+      );
+    }
+
+    return makeEvent('claim', this.now, text, {
+      id: `claim.${meta.won ? 'win' : meta.rank}.${Math.round(this.now * 100)}`,
+      clipId: 'claim',
+      dedupeKey: 'claim',
+      interrupt: true,
+      staleAfter: 60,
+      audioProgram,
+      meta,
+    });
+  }
+
+  /**
+   * Emit the exact HELIOS classification once enough finish metadata exists.
+   * `force` preserves a deterministic generic fallback for test seams or a
+   * race whose nearest rival never records a finish time.
+   */
+  emitClaim(snapshot, options = {}) {
+    if (this.claimCalled) return false;
+    const event = this._claimEvent(snapshot, Boolean(options.force));
+    if (!event) return false;
+    this.queue = this.queue.filter(item => item.kind !== 'finish' && item.kind !== 'claim');
+    this.claimCalled = true;
+    this.finishPending = null;
+    this.emit(event);
+    return true;
+  }
+
+  _detectFinish(snapshot) {
+    const finished = Boolean(snapshot.player?.finished);
+    if (!finished) {
+      this.prevFinished = false;
+      this.finishCalled = false;
+      this.claimCalled = false;
+      this.finishPending = null;
+      return;
+    }
+
+    const crossedNow = !this.prevFinished;
+    this.prevFinished = true;
+    if (crossedNow) {
+      this.finishPending = { detectedAt: this.now };
+      this.queue.length = 0;
+      const meta = this._finishClassification(snapshot);
+      const clipId = meta.won ? 'finish.win' : 'finish.loss';
+      const text = meta.won
+        ? 'HELIOS online. OpenAI wins the race to HELIOS.'
+        : DEFAULT_RACE_CONTROL_CLIPS[clipId].text;
+      const audioProgram = meta.won
+        ? program(
+          ['clause.helios-online', 105],
+          ['clause.openai-wins', 90],
+        )
+        : null;
+      this.finishCalled = true;
+      this.emit(makeEvent('finish', this.now, text, {
+        id: `finish.${meta.won ? 'win' : meta.rank}`,
+        clipId: meta.won ? clipId : `finish.loss.${meta.rank}`,
         dedupeKey: 'finish',
         interrupt: true,
         staleAfter: 60,
-        meta: {
-          rank,
-          won,
-          winner: snapshot.order?.[0]?.name || null,
-        },
-      },
-    ));
+        audioProgram,
+        meta,
+      }));
+      return;
+    }
+
+    // Every crossing gets an immediate generic finish transmission first.
+    // The following frame may replace it with the exact named/margin claim;
+    // a higher-priority claim safely interrupts the generic program.
+    if (!this.claimCalled && this.emitClaim(snapshot)) return;
+    if (this.finishPending &&
+        this.now - this.finishPending.detectedAt >= this.finishMarginWait) {
+      // The immediate finish call is the bounded fallback. Do not repeat it.
+      this.finishPending = null;
+    }
   }
 
   _purgeStale() {
@@ -732,6 +1075,10 @@ export class RaceControlDirector {
       priority: item.priority,
       at: this.now,
       run: this.run,
+      meta: { ...(item.meta || {}) },
+      audioProgram: item.audioProgram
+        ? item.audioProgram.map(segment => ({ ...segment }))
+        : null,
     });
     if (this.history.length > this.maxHistory) this.history.shift();
     this._showCaption(item);
@@ -762,6 +1109,11 @@ export class RaceControlDirector {
       return;
     }
 
+    const audioProgram = this._resolveProgram(item);
+    if (audioProgram) {
+      this.currentCancel = this._playAudioProgram(audioProgram, finish);
+      return;
+    }
     const clip = this._resolveClip(item);
     const clipText = clip && typeof clip === 'object' ? clip.text : null;
     if (clip && (!clipText || clipText === item.text)) {
@@ -769,6 +1121,61 @@ export class RaceControlDirector {
       return;
     }
     this.currentCancel = this._speak(item.text, finish);
+  }
+
+  _resolveProgram(item) {
+    if (!Array.isArray(item.audioProgram) || !item.audioProgram.length) return null;
+    const segments = [];
+    for (const segment of item.audioProgram) {
+      const entry = this.clipManifest[segment.clipId];
+      if (!entry) return null;
+      const descriptor = typeof entry === 'string' ? { src: entry } : entry;
+      if (!descriptor?.src) return null;
+      segments.push({
+        clipId: segment.clipId,
+        gapMs: clamp(segment.gapMs ?? 18, 0, 600),
+        descriptor,
+      });
+    }
+    return Object.freeze(segments);
+  }
+
+  _playAudioProgram(segments, finish) {
+    let index = 0;
+    let activeCancel = null;
+    let gapTimer = null;
+    let cancelled = false;
+    this.audioCacheStats.programStarts++;
+
+    const next = () => {
+      if (cancelled) return;
+      if (index >= segments.length) {
+        finish();
+        return;
+      }
+      const segment = segments[index++];
+      activeCancel = this._playClip(segment.descriptor, () => {
+        activeCancel = null;
+        if (cancelled) return;
+        if (segment.gapMs > 0) {
+          gapTimer = this.setTimer(() => {
+            gapTimer = null;
+            next();
+          }, segment.gapMs);
+        } else {
+          next();
+        }
+      }, segment.descriptor.text);
+    };
+
+    next();
+    return () => {
+      cancelled = true;
+      activeCancel?.();
+      activeCancel = null;
+      if (gapTimer) this.clearTimer(gapTimer);
+      gapTimer = null;
+    };
   }
 
   _resolveClip(item) {
@@ -789,9 +1196,15 @@ export class RaceControlDirector {
   }
 
   _manifestDescriptors(clipIds = null) {
-    const ids = clipIds
+    const requestedIds = clipIds
       ? [...new Set(Array.isArray(clipIds) ? clipIds : [clipIds])]
       : Object.keys(this.clipManifest);
+    const ids = new Set(requestedIds);
+    for (const id of requestedIds) {
+      for (const dependency of warmDependencies(id)) {
+        if (this.clipManifest[dependency]) ids.add(dependency);
+      }
+    }
     const bySource = new Map();
     for (const id of ids) {
       const entry = this.clipManifest[id];
@@ -958,7 +1371,7 @@ export class RaceControlDirector {
     return this._cacheSummary(requested, context);
   }
 
-  _playClip(entry, finish) {
+  _playClip(entry, finish, fallbackText = null) {
     const descriptor = typeof entry === 'string' ? { src: entry } : entry;
     const context = this.getAudioContext();
     if (context?.decodeAudioData && this.fetchFn) {
@@ -968,14 +1381,20 @@ export class RaceControlDirector {
         buffer => {
           if (cancelled) return;
           try {
-            activeCancel = this._playDecodedClip(buffer, descriptor, finish, context);
+            activeCancel = this._playDecodedClip(
+              buffer,
+              descriptor,
+              finish,
+              context,
+              fallbackText,
+            );
           } catch {
-            activeCancel = this._playMediaClip(descriptor, finish);
+            activeCancel = this._playMediaClip(descriptor, finish, fallbackText);
           }
         },
         () => {
           if (cancelled) return;
-          activeCancel = this._playMediaClip(descriptor, finish);
+          activeCancel = this._playMediaClip(descriptor, finish, fallbackText);
         },
       );
       return () => {
@@ -983,10 +1402,10 @@ export class RaceControlDirector {
         activeCancel?.();
       };
     }
-    return this._playMediaClip(descriptor, finish);
+    return this._playMediaClip(descriptor, finish, fallbackText);
   }
 
-  _playDecodedClip(buffer, descriptor, finish, context) {
+  _playDecodedClip(buffer, descriptor, finish, context, fallbackText = null) {
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = descriptor.rate || 1;
@@ -1037,7 +1456,13 @@ export class RaceControlDirector {
     };
     source.onended = done;
     try {
-      source.start(0);
+      const offset = clamp(descriptor.offset || 0, 0, Math.max(0, buffer.duration || 0));
+      const available = Math.max(0, (buffer.duration || 0) - offset);
+      const duration = Number.isFinite(descriptor.duration)
+        ? clamp(descriptor.duration, 0.01, available || descriptor.duration)
+        : null;
+      if (duration) source.start(0, offset, duration);
+      else source.start(0);
       this.audioCacheStats.decodedStarts++;
       if (Number.isFinite(this.currentRequestedAt)) {
         this.audioCacheStats.lastDecodedStartLatencyMs =
@@ -1045,11 +1470,13 @@ export class RaceControlDirector {
       }
     } catch {
       disconnect();
-      return this._playMediaClip(descriptor, finish);
+      return this._playMediaClip(descriptor, finish, fallbackText);
     }
 
-    const durationMs = buffer.duration
-      ? (buffer.duration * 1000) / Math.max(0.01, descriptor.rate || 1)
+    const durationMs = descriptor.duration
+      ? (descriptor.duration * 1000) / Math.max(0.01, descriptor.rate || 1)
+      : buffer.duration
+        ? (buffer.duration * 1000) / Math.max(0.01, descriptor.rate || 1)
       : descriptor.durationMs || 0;
     fallback = this.setTimer(done, Math.max(15_000, durationMs + 3_000));
     return () => {
@@ -1062,8 +1489,13 @@ export class RaceControlDirector {
     };
   }
 
-  _playMediaClip(descriptor, finish) {
-    if (!this.AudioCtor) return this._speak(this.current?.text || '', finish);
+  _playMediaClip(descriptor, finish, fallbackText = null) {
+    const safeFallback = fallbackText || descriptor.text || this.current?.text || '';
+    // Audio sprites require sample-accurate Web Audio slicing. If decoding is
+    // unavailable, local speech is safer than leaking the entire 46-second
+    // sprite through a media element.
+    if (Number.isFinite(descriptor.offset)) return this._speak(safeFallback, finish);
+    if (!this.AudioCtor) return this._speak(safeFallback, finish);
     const audio = new this.AudioCtor(descriptor.src);
     audio.preload = 'auto';
     audio.volume = clamp(descriptor.volume ?? 0.92, 0, 1);
@@ -1130,7 +1562,7 @@ export class RaceControlDirector {
       if (fallback) this.clearTimer(fallback);
       audio.pause?.();
       disconnectNodes();
-      speechCancel = this._speak(this.current?.text || '', finish);
+      speechCancel = this._speak(safeFallback, finish);
     };
     audio.onended = done;
     audio.onerror = fallbackToSpeech;
@@ -1142,7 +1574,7 @@ export class RaceControlDirector {
     const watchdogMs = Math.max(
       15_000,
       (descriptor.durationMs || 0) + 3_000,
-      estimateSpeechMs(this.current?.text) * 3,
+      estimateSpeechMs(safeFallback) * 3,
     );
     fallback = this.setTimer(done, watchdogMs);
     return () => {
@@ -1258,7 +1690,9 @@ export class RaceControlDirector {
     this.captionEl.setAttribute?.('aria-hidden', 'false');
     if (this.captionCopy) this.captionCopy.textContent = item.text;
     if (this.captionSignal) this.captionSignal.textContent =
-      item.kind === 'finish' ? 'HELIOS PRIORITY' : 'ORBITAL RACE CONTROL';
+      item.kind === 'finish' || item.kind === 'claim'
+        ? 'HELIOS PRIORITY'
+        : 'ORBITAL RACE CONTROL';
     this.captionEl.classList?.add('live');
     this.captionEl.dataset.kind = item.kind;
     if (this.captionTimer) this.clearTimer(this.captionTimer);
@@ -1306,6 +1740,10 @@ export class RaceControlDirector {
         kind: this.current.kind,
         text: this.current.text,
         priority: this.current.priority,
+        meta: { ...(this.current.meta || {}) },
+        audioProgram: this.current.audioProgram
+          ? this.current.audioProgram.map(segment => ({ ...segment }))
+          : null,
       } : null,
       queued: this.queue.map(item => ({
         id: item.id,
@@ -1313,10 +1751,17 @@ export class RaceControlDirector {
         text: item.text,
         priority: item.priority,
         expiresAt: item.expiresAt,
+        meta: { ...(item.meta || {}) },
+        audioProgram: item.audioProgram
+          ? item.audioProgram.map(segment => ({ ...segment }))
+          : null,
       })),
       history: this.history.map(item => ({ ...item })),
       leader: { ...this.leader },
       playerRank: { ...this.playerRank },
+      finishPending: this.finishPending ? { ...this.finishPending } : null,
+      finishCalled: this.finishCalled,
+      claimCalled: this.claimCalled,
       audioCache: {
         prefetched: [...this.rawClipCache.values()].filter(entry => entry.status === 'ready').length,
         decoded: [...this.decodedClipCache.values()].filter(entry => entry.status === 'ready').length,

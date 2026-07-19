@@ -1,0 +1,198 @@
+{
+  "clause.lab.OPENAI": {
+    "offset": 0.0,
+    "duration": 1.158375
+  },
+  "clause.lab.ANTHROPIC": {
+    "offset": 1.158375,
+    "duration": 0.958667
+  },
+  "clause.lab.DEEPMIND": {
+    "offset": 2.117042,
+    "duration": 0.942583
+  },
+  "clause.lab.xAI": {
+    "offset": 3.059625,
+    "duration": 1.11075
+  },
+  "clause.lab.META": {
+    "offset": 4.170375,
+    "duration": 0.766833
+  },
+  "clause.lab.DEEPSEEK": {
+    "offset": 4.937208,
+    "duration": 0.775833
+  },
+  "clause.lab.MISTRAL": {
+    "offset": 5.713042,
+    "duration": 0.863708
+  },
+  "clause.lab.QWEN": {
+    "offset": 6.57675,
+    "duration": 0.817958
+  },
+  "clause.lab.MOONSHOT": {
+    "offset": 7.394708,
+    "duration": 0.865958
+  },
+  "clause.lab.COHERE": {
+    "offset": 8.260667,
+    "duration": 0.779458
+  },
+  "clause.lab.MINIMAX": {
+    "offset": 9.040125,
+    "duration": 0.955458
+  },
+  "clause.lab.MICROSOFT": {
+    "offset": 9.995583,
+    "duration": 1.053
+  },
+  "clause.rank.1": {
+    "offset": 11.048583,
+    "duration": 0.680417
+  },
+  "clause.rank.2": {
+    "offset": 11.729,
+    "duration": 0.809958
+  },
+  "clause.rank.3": {
+    "offset": 12.538958,
+    "duration": 0.524
+  },
+  "clause.rank.4": {
+    "offset": 13.062958,
+    "duration": 0.595208
+  },
+  "clause.rank.5": {
+    "offset": 13.658167,
+    "duration": 0.589375
+  },
+  "clause.rank.6": {
+    "offset": 14.247542,
+    "duration": 0.581833
+  },
+  "clause.rank.7": {
+    "offset": 14.829375,
+    "duration": 0.767333
+  },
+  "clause.rank.8": {
+    "offset": 15.596708,
+    "duration": 0.530958
+  },
+  "clause.rank.9": {
+    "offset": 16.127667,
+    "duration": 0.673958
+  },
+  "clause.rank.10": {
+    "offset": 16.801625,
+    "duration": 0.570542
+  },
+  "clause.rank.11": {
+    "offset": 17.372167,
+    "duration": 0.804375
+  },
+  "clause.rank.12": {
+    "offset": 18.176542,
+    "duration": 0.730333
+  },
+  "clause.digit.0": {
+    "offset": 18.906875,
+    "duration": 0.726292
+  },
+  "clause.digit.1": {
+    "offset": 19.633167,
+    "duration": 0.634208
+  },
+  "clause.digit.2": {
+    "offset": 20.267375,
+    "duration": 0.618042
+  },
+  "clause.digit.3": {
+    "offset": 20.885417,
+    "duration": 0.680125
+  },
+  "clause.digit.4": {
+    "offset": 21.565542,
+    "duration": 0.6615
+  },
+  "clause.digit.5": {
+    "offset": 22.227042,
+    "duration": 0.678542
+  },
+  "clause.digit.6": {
+    "offset": 22.905583,
+    "duration": 0.499958
+  },
+  "clause.digit.7": {
+    "offset": 23.405542,
+    "duration": 0.736042
+  },
+  "clause.digit.8": {
+    "offset": 24.141583,
+    "duration": 0.580417
+  },
+  "clause.digit.9": {
+    "offset": 24.722,
+    "duration": 0.697958
+  },
+  "clause.openai-passes": {
+    "offset": 25.419958,
+    "duration": 1.686875
+  },
+  "clause.passes-openai": {
+    "offset": 27.106833,
+    "duration": 1.689458
+  },
+  "clause.openai-drops-to": {
+    "offset": 28.796292,
+    "duration": 1.755083
+  },
+  "clause.for": {
+    "offset": 30.551375,
+    "duration": 0.555708
+  },
+  "clause.takes-lead-from": {
+    "offset": 31.107083,
+    "duration": 1.25425
+  },
+  "clause.slingshot-deployed": {
+    "offset": 32.361333,
+    "duration": 1.405875
+  },
+  "clause.openai-attacks": {
+    "offset": 33.767208,
+    "duration": 1.649583
+  },
+  "clause.helios-online": {
+    "offset": 35.416792,
+    "duration": 1.353667
+  },
+  "clause.openai-wins": {
+    "offset": 36.770458,
+    "duration": 2.39
+  },
+  "clause.openai-wins-by": {
+    "offset": 39.160458,
+    "duration": 1.845625
+  },
+  "clause.claims-helios": {
+    "offset": 41.006083,
+    "duration": 1.193833
+  },
+  "clause.openai-finishes": {
+    "offset": 42.199917,
+    "duration": 1.591375
+  },
+  "clause.point": {
+    "offset": 43.791292,
+    "duration": 0.570083
+  },
+  "clause.seconds": {
+    "offset": 44.361375,
+    "duration": 0.845208
+  },
+  "clause.back": {
+    "offset": 45.206583,
+    "duration": 0.543
+  }
+}

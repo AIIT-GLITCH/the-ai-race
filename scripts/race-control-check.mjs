@@ -10,9 +10,30 @@ for (const [clipId, descriptor] of Object.entries(DEFAULT_RACE_CONTROL_CLIPS)) {
   assert.equal(typeof descriptor.src, 'string', `${clipId} descriptor exposes its source`);
   assert.equal(typeof descriptor.text, 'string', `${clipId} descriptor exposes its exact caption`);
   assert.doesNotMatch(descriptor.text, /Sam Altman/i, `${clipId} narration stays entrant-only`);
+  if (clipId.startsWith('clause.')) {
+    assert.ok(Number.isFinite(descriptor.offset), `${clipId} has a sample-accurate sprite offset`);
+    assert.ok(descriptor.duration > 0, `${clipId} has a playable sprite duration`);
+  }
 }
+assert.equal(
+  new Set(Object.entries(DEFAULT_RACE_CONTROL_CLIPS)
+    .filter(([clipId]) => clipId.startsWith('clause.'))
+    .map(([, descriptor]) => descriptor.src)).size,
+  1,
+  'all compositional clauses share one deduplicated network/decode source',
+);
 
 function assertResolvedClipMatches(control, item, message) {
+  if (item.audioProgram) {
+    const segments = control._resolveProgram(item);
+    assert.ok(segments?.length, `${message}: compositional baked program resolves`);
+    assert.equal(
+      segments.length,
+      item.audioProgram.length,
+      `${message}: every authored clause resolves`,
+    );
+    return;
+  }
   const descriptor = control._resolveClip(item);
   assert.ok(descriptor, `${message}: a baked descriptor resolves`);
   assert.equal(descriptor.text, item.text, `${message}: baked speech and caption stay aligned`);
@@ -51,6 +72,62 @@ function fakeAudioNode(extra = {}) {
     disconnect() {},
     ...extra,
   };
+}
+
+// Sprite descriptors must start the shared decoded buffer at the exact clause
+// window instead of leaking adjacent narration.
+{
+  let startArgs = null;
+  let finished = 0;
+  const source = fakeAudioNode({
+    playbackRate: { value: 1 },
+    start(...args) { startArgs = args; },
+    stop() {},
+    onended: null,
+  });
+  const context = {
+    destination: {},
+    createBufferSource: () => source,
+    createBiquadFilter: () => fakeAudioNode({
+      frequency: { value: 0 },
+      Q: { value: 0 },
+    }),
+    createDynamicsCompressor: () => fakeAudioNode({
+      threshold: { value: 0 },
+      knee: { value: 0 },
+      ratio: { value: 0 },
+      attack: { value: 0 },
+      release: { value: 0 },
+    }),
+    createGain: () => fakeAudioNode({ gain: { value: 0 } }),
+  };
+  const timers = new Map();
+  let timerId = 0;
+  const control = new RaceControlDirector({
+    setTimer: callback => {
+      const id = ++timerId;
+      timers.set(id, callback);
+      return id;
+    },
+    clearTimer: id => timers.delete(id),
+  });
+  const descriptor = DEFAULT_RACE_CONTROL_CLIPS['clause.digit.8'];
+  const cancel = control._playDecodedClip(
+    { duration: 46 },
+    descriptor,
+    () => { finished++; },
+    context,
+    descriptor.text,
+  );
+  assert.deepEqual(
+    startArgs,
+    [0, descriptor.offset, descriptor.duration],
+    'decoded sprite playback is sample-windowed',
+  );
+  source.onended?.();
+  assert.equal(finished, 1, 'a sliced clause completes its enclosing program');
+  cancel();
+  control.dispose();
 }
 
 // Menu-idle prefetch + gesture-time decode share one cache. A decoded cache hit
@@ -274,6 +351,7 @@ const transport = (item, finish) => {
     text: item.text,
     clipId: item.clipId,
     meta: item.meta,
+    audioProgram: item.audioProgram,
   });
   finishCurrent = finish;
   return () => { cancellations++; };
@@ -366,7 +444,7 @@ director.update(snapshot({
   finished: true,
 }));
 assert.equal(calls.at(-1).kind, 'finish');
-assert.match(calls.at(-1).text, /Compute claimed/);
+assert.match(calls.at(-1).text, /HELIOS online/);
 assert.ok(cancellations >= 1, 'priority finish cancels an in-flight lower-priority call');
 assert.ok(director.inspect().queued.every(item => item.kind === 'finish'), 'finish suppresses stale race calls');
 for (const call of director.inspect().history) {
@@ -439,6 +517,7 @@ function scenario(start = {}) {
         text: item.text,
         clipId: item.clipId,
         meta: item.meta,
+        audioProgram: item.audioProgram,
       });
       finish = done;
       return () => {};
@@ -464,14 +543,14 @@ function scenario(start = {}) {
   s.end();
   assert.ok(s.spoken.some(call =>
     call.kind === 'rankUp' &&
-    call.text === DEFAULT_RACE_CONTROL_CLIPS['rank.up'].text));
+    call.text === 'OpenAI passes DeepMind for second.'));
   assert.ok(s.events.some(event => event.kind === 'rankUp'), 'host moment callback receives rank-up metadata');
   s.control.update(snapshot({ time: 2, rank: 3 }));
   s.control.update(snapshot({ time: 2.75, rank: 3 }));
   s.end();
   assert.ok(s.spoken.some(call =>
     call.kind === 'rankDown' &&
-    call.text === DEFAULT_RACE_CONTROL_CLIPS['rank.down'].text));
+    call.text === 'DeepMind passes OpenAI. OpenAI drops to third.'));
   for (const call of s.control.inspect().history) {
     assertResolvedClipMatches(s.control, call, `position call ${call.id}`);
   }
@@ -558,7 +637,7 @@ function scenario(start = {}) {
   assert.equal(s.control.inspect().current?.kind, 'slingshotFire');
   assert.equal(
     s.spoken.at(-1).text,
-    'Slingshot deployed. OpenAI is coming through.',
+    'Slingshot deployed. OpenAI attacks Anthropic.',
   );
   assert.equal(s.spoken.at(-1).meta.target, 'ANTHROPIC');
   s.end();
@@ -643,6 +722,156 @@ function scenario(start = {}) {
   s.control.update(snapshot({ time: 1 }));
   assert.ok(!s.control.inspect().queued.some(call => call.id === 'stale-rank'));
   s.control.dispose();
+}
+
+// Exact HELIOS classification is deterministic, margin-aware, and idempotent.
+// This exercises the public seam directly so the regression does not depend on
+// audio duration, browser timers, or the order in which the render loop observes
+// P1 and P2 crossing the line.
+{
+  const transmissions = [];
+  let complete = null;
+  const control = new RaceControlDirector({
+    minGap: 0,
+    transport: (item, done) => {
+      transmissions.push({
+        kind: item.kind,
+        text: item.text,
+        meta: item.meta,
+        audioProgram: item.audioProgram,
+      });
+      complete = done;
+      return () => {};
+    },
+  });
+  const base = snapshot({ phase: 'countdown' });
+  control.reset(base);
+  complete?.();
+  control.update(snapshot({ time: .01, phase: 'race' }));
+  complete?.();
+
+  const exactWin = {
+    phase: 'race',
+    time: 42.18,
+    progress: 1,
+    player: {
+      name: 'OPENAI',
+      rank: 1,
+      finished: true,
+      finishTime: 42,
+    },
+    order: [
+      { name: 'OPENAI', finished: true, finishTime: 42, progress: 1 },
+      { name: 'ANTHROPIC', finished: true, finishTime: 42.18, progress: 1 },
+      { name: 'DEEPMIND', finished: false, finishTime: 0, progress: .99 },
+    ],
+  };
+  assert.equal(control.emitClaim(exactWin), true, 'an exact P1/P2 result emits a claim');
+  const claim = transmissions.at(-1);
+  assert.equal(claim.kind, 'claim');
+  assert.equal(claim.text, 'HELIOS online. OpenAI wins by 0.18 seconds.');
+  assert.deepEqual(
+    {
+      winner: claim.meta.winner,
+      rival: claim.meta.rival,
+      rank: claim.meta.rank,
+      marginText: claim.meta.marginText,
+      marginKnown: claim.meta.marginKnown,
+    },
+    {
+      winner: 'OPENAI',
+      rival: 'ANTHROPIC',
+      rank: 1,
+      marginText: '0.18 seconds',
+      marginKnown: true,
+    },
+  );
+  assert.ok(Math.abs(claim.meta.margin - .18) < 1e-9, 'raw winning margin remains numeric');
+  assert.deepEqual(
+    claim.audioProgram.map(segment => segment.clipId),
+    [
+      'clause.helios-online',
+      'clause.openai-wins-by',
+      'clause.digit.0',
+      'clause.point',
+      'clause.digit.1',
+      'clause.digit.8',
+      'clause.seconds',
+    ],
+    'the exact 0.18-second margin is assembled from bounded baked clauses',
+  );
+  assert.equal(
+    control.emitClaim(exactWin),
+    false,
+    're-observing the same classification cannot repeat the HELIOS claim',
+  );
+  assert.equal(
+    control.inspect().history.filter(item => item.kind === 'claim').length,
+    1,
+    'history contains exactly one authoritative HELIOS claim',
+  );
+  control.dispose();
+}
+
+// A non-winning classification names the winner, OpenAI's position, and its
+// exact deficit using the same bounded clause transport.
+{
+  const transmissions = [];
+  const control = new RaceControlDirector({
+    minGap: 0,
+    transport: item => {
+      transmissions.push(item);
+      return () => {};
+    },
+  });
+  control.phase = 'race';
+  control.now = 40.42;
+  const exactLoss = {
+    phase: 'race',
+    time: 40.42,
+    progress: 1,
+    player: {
+      name: 'OPENAI',
+      rank: 2,
+      finished: true,
+      finishTime: 40.42,
+    },
+    order: [
+      { name: 'ANTHROPIC', finished: true, finishTime: 40, progress: 1 },
+      { name: 'OPENAI', finished: true, finishTime: 40.42, progress: 1 },
+      { name: 'DEEPMIND', finished: false, finishTime: 0, progress: .99 },
+    ],
+  };
+  assert.equal(control.emitClaim(exactLoss), true);
+  const claim = transmissions.at(-1);
+  assert.equal(claim.kind, 'claim');
+  assert.equal(
+    claim.text,
+    'Anthropic claims HELIOS. OpenAI finishes second, 0.42 seconds back.',
+  );
+  assert.deepEqual(
+    {
+      winner: claim.meta.winner,
+      rank: claim.meta.rank,
+      playerFinishTime: claim.meta.playerFinishTime,
+      winnerFinishTime: claim.meta.winnerFinishTime,
+    },
+    {
+      winner: 'ANTHROPIC',
+      rank: 2,
+      playerFinishTime: 40.42,
+      winnerFinishTime: 40,
+    },
+  );
+  assert.ok(Math.abs(claim.meta.margin - .42) < 1e-9, 'raw losing margin remains numeric');
+  assert.ok(
+    claim.audioProgram.some(segment => segment.clipId === 'clause.lab.ANTHROPIC') &&
+    claim.audioProgram.some(segment => segment.clipId === 'clause.rank.2') &&
+    claim.audioProgram.some(segment => segment.clipId === 'clause.digit.4') &&
+    claim.audioProgram.some(segment => segment.clipId === 'clause.digit.2'),
+    'loss program names the winner, rank, and exact deficit',
+  );
+  control.dispose();
 }
 
 // Keep this last so director behavior remains testable while a newly authored

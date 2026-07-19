@@ -37,6 +37,7 @@
   body:not(.race-active) #launchCue,
   body:not(.race-active) #momentStamp,
   body:not(.race-active) #leaderboard,
+  body:not(.race-active) #ghostDelta,
   body:not(.race-active) #telemetry,
   body:not(.race-active) #minimap,
   body:not(.race-active) #controlsHint,
@@ -123,6 +124,64 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: .02em;
   }
+
+  #ghostDelta {
+    left: 22px;
+    top: 124px;
+    width: 226px;
+    overflow: hidden;
+    background: linear-gradient(105deg, rgba(3, 7, 12, .92), rgba(9, 18, 23, .7));
+    border: 1px solid rgba(108, 236, 255, .22);
+    border-left: 3px solid var(--cyan);
+    box-shadow: 0 12px 34px rgba(0,0,0,.3), inset 0 0 22px rgba(108,236,255,.035);
+    backdrop-filter: blur(11px);
+  }
+  .ghostDeltaLine {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 9px 3px;
+    color: var(--cyan);
+    font-size: 7px;
+    font-weight: 950;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+  }
+  #ghostDeltaValue {
+    color: var(--ink);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .04em;
+    text-shadow: 0 0 14px rgba(108,236,255,.36);
+  }
+  #ghostSectorLabel {
+    display: block;
+    overflow: hidden;
+    padding: 0 9px 6px;
+    color: var(--dim);
+    font-size: 6px;
+    font-weight: 900;
+    letter-spacing: .15em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  #ghostDelta[data-available="false"] {
+    border-left-color: rgba(154,166,162,.5);
+    opacity: .72;
+  }
+  #ghostDelta[data-available="false"] #ghostDeltaValue { color: var(--dim); text-shadow: none; }
+  #ghostDelta[data-status="ahead"] {
+    border-color: rgba(223,255,71,.4);
+    border-left-color: var(--acid);
+  }
+  #ghostDelta[data-status="ahead"] #ghostDeltaValue { color: var(--acid); }
+  #ghostDelta[data-status="behind"] {
+    border-color: rgba(255,101,52,.4);
+    border-left-color: var(--orange);
+  }
+  #ghostDelta[data-status="behind"] #ghostDeltaValue { color: #ff9b82; }
 
   #msg {
     left: 50%;
@@ -327,7 +386,7 @@
 
   #leaderboard {
     left: 22px;
-    top: 146px;
+    top: 172px;
     width: 226px;
   }
   .tower-title {
@@ -617,8 +676,20 @@
     display: grid;
     gap: 4px;
   }
-  #difficultySelect .setupChoices { grid-template-columns: repeat(3, 1fr); }
+    #difficultySelect .setupChoices { grid-template-columns: repeat(3, 1fr); }
   #driverSelect .setupChoices { grid-template-columns: repeat(2, 1fr); }
+  #contractSelect {
+    grid-column: 1 / -1;
+    padding-top: 2px;
+    border-top: 1px solid rgba(255,255,255,.07);
+  }
+  #contractSelect .setupChoices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #contractSelect .setupOption[aria-pressed="true"] {
+    color: #05060a;
+    background: linear-gradient(125deg, var(--acid), var(--cyan));
+    border-color: var(--cyan);
+    box-shadow: 0 0 22px rgba(108,236,255,.12);
+  }
   .setupOption {
     min-width: 0;
     min-height: 45px;
@@ -794,6 +865,158 @@
     margin: 0 auto 22px;
     background: rgba(255,255,255,.12);
   }
+  .resultContract {
+    display: grid;
+    grid-template-columns: minmax(150px, .74fr) 1.26fr;
+    align-items: stretch;
+    gap: 1px;
+    margin: -10px auto 16px;
+    overflow: hidden;
+    background: rgba(255,255,255,.12);
+    border-left: 3px solid var(--cyan);
+    text-align: left;
+  }
+  .resultContractName,
+  .resultContractOutcome {
+    min-width: 0;
+    padding: 9px 11px;
+    background: rgba(4,8,13,.86);
+  }
+  .resultContract small {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--dim);
+    font-size: 7px;
+    font-weight: 950;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  #resultContractName {
+    display: block;
+    overflow: hidden;
+    color: var(--cyan);
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .resultContractOutcome {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-content: center;
+    gap: 4px 10px;
+  }
+  #resultContractStatus {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 9px;
+    font-weight: 950;
+    letter-spacing: .13em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  #resultContractProgress {
+    color: var(--dim);
+    font-size: 8px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  #resultContract[data-status="complete"] {
+    border-left-color: var(--acid);
+    box-shadow: inset 0 0 24px rgba(223,255,71,.035);
+  }
+  #resultContract[data-status="complete"] #resultContractStatus { color: var(--acid); }
+  #resultContract[data-status="failed"] { border-left-color: var(--orange); }
+  #resultContract[data-status="failed"] #resultContractStatus { color: #ff9b82; }
+  .sectorBreakdown {
+    margin: 0 auto 16px;
+    padding: 9px;
+    background: rgba(3,7,12,.74);
+    border: 1px solid rgba(108,236,255,.14);
+  }
+  .sectorBreakdownHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 2px 7px;
+    text-transform: uppercase;
+  }
+  .sectorBreakdownHead h3 {
+    color: var(--dim);
+    font-size: 7px;
+    font-weight: 950;
+    letter-spacing: .2em;
+  }
+  #resultPbDelta {
+    color: var(--cyan);
+    font-size: 8px;
+    font-weight: 950;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .12em;
+  }
+  #sectorBreakdownList {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    list-style: none;
+  }
+  .sectorSplit {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 8px;
+    background: rgba(255,255,255,.035);
+    border-left: 2px solid rgba(108,236,255,.24);
+    text-align: left;
+  }
+  .sectorSplitCode {
+    color: var(--cyan);
+    font-size: 9px;
+    font-weight: 950;
+  }
+  .sectorSplitCopy { min-width: 0; }
+  .sectorSplitName {
+    display: block;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .07em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .sectorSplitTime {
+    display: block;
+    margin-top: 2px;
+    color: var(--dim);
+    font-size: 7px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .06em;
+  }
+  .sectorSplitDelta {
+    color: var(--dim);
+    font-size: 8px;
+    font-weight: 950;
+    font-variant-numeric: tabular-nums;
+  }
+  .sectorSplit[data-status="ahead"] {
+    border-left-color: var(--acid);
+    background: rgba(223,255,71,.045);
+  }
+  .sectorSplit[data-status="ahead"] .sectorSplitDelta { color: var(--acid); }
+  .sectorSplit[data-status="behind"] {
+    border-left-color: var(--orange);
+    background: rgba(255,101,52,.045);
+  }
+  .sectorSplit[data-status="behind"] .sectorSplitDelta { color: #ff9b82; }
   .resultStat {
     min-width: 0;
     padding: 11px 12px;
@@ -821,6 +1044,18 @@
     display: flex;
     justify-content: center;
     gap: 10px;
+  }
+  .btn.pb {
+    color: #041014;
+    background: linear-gradient(110deg, var(--cyan), var(--acid));
+    box-shadow: 0 0 32px rgba(108,236,255,.17);
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    color: rgba(244,247,245,.42);
+    background: rgba(255,255,255,.07);
+    border: 1px solid rgba(255,255,255,.09);
+    box-shadow: none;
   }
 
   /* touch controls */
@@ -890,6 +1125,7 @@
     .setupGroup legend { margin-bottom: 4px; font-size: 7px; }
     .setupOption { min-height: 44px; padding: 6px; text-align: center; }
     .setupOption small { display: none; }
+    #contractSelect .setupChoices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     #results .panel { padding: 24px 14px 72px; }
     #results .panel h2 { font-size: clamp(38px, 11vw, 52px); }
     .resultsSub { margin-bottom: 20px; letter-spacing: .16em; }
@@ -905,8 +1141,19 @@
       grid-column: 1 / -1;
       text-align: center;
     }
+    .resultContract {
+      grid-template-columns: 1fr 1.35fr;
+      margin-bottom: 12px;
+    }
+    .resultContractName,
+    .resultContractOutcome { padding: 8px; }
+    .resultContractOutcome { grid-template-columns: 1fr; gap: 3px; }
+    #resultContractStatus { font-size: 8px; }
+    .sectorBreakdown { margin-bottom: 12px; padding: 7px; }
+    #sectorBreakdownList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sectorSplit { padding: 6px; }
     .resultsTableWrap {
-      max-height: 210px;
+      max-height: 150px;
       margin-bottom: 14px;
       overflow: auto;
       border-top: 1px solid rgba(255,255,255,.09);
@@ -914,7 +1161,13 @@
       overscroll-behavior: contain;
     }
     td, th { padding: 7px 8px; }
-    .resultsActions .btn { padding: 13px 8px; font-size: 9px; letter-spacing: .14em; }
+    .resultsActions .btn {
+      min-width: 0;
+      flex: 1;
+      padding: 13px 6px;
+      font-size: 8px;
+      letter-spacing: .11em;
+    }
     .actionRow { width: 100%; margin-top: 2vh; }
     .btn { min-width: 0; flex: 1; }
     .inputNote { display: none; }
@@ -924,6 +1177,16 @@
     #raceBox { left: auto; right: 10px; top: 10px; gap: 9px; transform: none; padding: 7px 8px; }
     #raceBox span:first-child, #raceBox span:last-child { display: none; }
     #raceBox b { font-size: 12px; }
+    #ghostDelta {
+      left: auto;
+      right: 10px;
+      top: 110px;
+      width: 164px;
+      transform: none;
+    }
+    .ghostDeltaLine { padding: 6px 7px 2px; }
+    #ghostDeltaValue { font-size: 11px; }
+    #ghostSectorLabel { padding: 0 7px 5px; font-size: 5px; }
     #leaderboard, #controlsHint, #minimap { display: none; }
     #muteBtn {
       right: 10px;
@@ -994,6 +1257,123 @@
   }
 
   @media (max-width: 900px) and (max-height: 520px) and (orientation: landscape) {
+    #menu .panel {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      grid-template-rows: auto auto auto auto;
+      align-content: center;
+      align-items: start;
+      gap: 4px 10px;
+      padding: 8px 10px;
+      overflow: auto;
+      background: linear-gradient(90deg, rgba(4,6,9,.98), rgba(4,6,9,.82));
+    }
+    #menu .eyebrow {
+      grid-column: 1 / -1;
+      margin: 0 0 2px;
+      font-size: 6px;
+      letter-spacing: .18em;
+    }
+    #menu .eyebrow::before { width: 18px; }
+    #menu .heroTitle {
+      grid-column: 1;
+      grid-row: 2;
+      font-size: 48px;
+    }
+    #menu .missionLine {
+      grid-column: 1;
+      grid-row: 3;
+      margin: 2px 0 0;
+      font-size: 9px;
+      line-height: 1.25;
+    }
+    #menu .setupPanel {
+      grid-column: 2;
+      grid-row: 2 / 5;
+      margin: 0;
+      padding: 6px;
+    }
+    #menu .setupHead { margin-bottom: 4px; font-size: 6px; }
+    #menu .setupGrid {
+      grid-template-columns: 1.18fr .82fr;
+      gap: 4px;
+    }
+    #menu .setupGroup legend { margin-bottom: 2px; font-size: 6px; }
+    #menu .setupOption {
+      min-height: 44px;
+      padding: 4px 3px;
+      font-size: 7px;
+    }
+    #menu #contractSelect { padding-top: 1px; }
+    #menu .setupNote { display: none; }
+    #menu .actionRow {
+      grid-column: 1;
+      grid-row: 4;
+      width: 180px;
+      margin: 2px 0 0;
+    }
+    #menu .actionRow .btn {
+      min-height: 44px;
+      padding: 9px 7px;
+      font-size: 8px;
+    }
+    #results .panel {
+      width: calc(100vw - 20px);
+      max-height: calc(100vh - 16px);
+      padding: 10px 10px 8px;
+    }
+    #results .panel h2 {
+      margin-bottom: 2px;
+      font-size: 28px;
+    }
+    #results .resultsSub { margin-bottom: 9px; font-size: 6px; }
+    #results .resultsMeta { margin: -5px auto 4px; font-size: 6px; }
+    #results .resultsStinger { margin-bottom: 6px; min-height: 0; padding: 3px 6px; }
+    #results .resultsHero {
+      grid-template-columns: 1.25fr repeat(4, minmax(0, 1fr));
+      margin-bottom: 6px;
+    }
+    #results .resultStat { padding: 5px 6px; }
+    #results .resultStat.slingshotStat {
+      grid-column: auto;
+      text-align: left;
+    }
+    #results .resultStat small { margin-bottom: 2px; font-size: 5px; }
+    #results .resultStat b { font-size: 8px; }
+    #results .resultContract {
+      grid-template-columns: .8fr 1.2fr;
+      margin: 0 auto 6px;
+    }
+    #results .resultContractName,
+    #results .resultContractOutcome { padding: 5px 7px; }
+    #results .resultContract small { margin-bottom: 2px; font-size: 5px; }
+    #results #resultContractName { font-size: 8px; }
+    #results #resultContractStatus,
+    #results #resultContractProgress { font-size: 6px; }
+    #results .sectorBreakdown { margin-bottom: 6px; padding: 5px; }
+    #results .sectorBreakdownHead { margin-bottom: 4px; }
+    #results #sectorBreakdownList { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+    #results .sectorSplit { padding: 4px 5px; }
+    #results .sectorSplitName,
+    #results .sectorSplitTime,
+    #results .sectorSplitDelta { font-size: 6px; }
+    #results .resultsTableWrap { max-height: 76px; margin-bottom: 6px; }
+    #results .resultsActions {
+      position: sticky;
+      z-index: 2;
+      bottom: 0;
+      justify-content: flex-end;
+      gap: 5px;
+      margin-left: 235px;
+      padding: 5px 0 0 5px;
+      background: linear-gradient(90deg, transparent, rgba(4,8,13,.98) 8%);
+    }
+    #results .resultsActions .btn {
+      min-height: 34px;
+      padding: 7px 4px;
+      font-size: 6px;
+      letter-spacing: .07em;
+    }
     #missionBar {
       width: 210px;
       padding: 7px 8px;
@@ -1008,6 +1388,12 @@
     #progressMeta span:first-child,
     #progressMeta span:last-child { display: none; }
     #progressMeta { display: none; }
+    #ghostDelta {
+      left: auto;
+      right: 10px;
+      top: 58px;
+      width: 140px;
+    }
     #launchCue {
       top: 72px;
       max-width: min(440px, calc(100vw - 320px));
@@ -1062,8 +1448,14 @@
       top: 10px;
     }
     body.results-active #raceControl {
+      left: 10px;
+      right: auto;
       top: auto;
+      bottom: 8px;
+      width: 240px;
+      transform: translate(0, 8px);
     }
+    body.results-active #raceControl.live { transform: translate(0, 0); }
   }
 
   @media (max-height: 680px) and (min-width: 700px) {
@@ -1095,6 +1487,14 @@
   <span>Mission Time<b id="time">0:00.00</b></span>
   <span>Data Cores<b id="best">0/8</b></span>
 </div>
+
+<section class="hud" id="ghostDelta" data-available="false" data-status="neutral" aria-label="MODEL N-1 personal-best delta">
+  <div class="ghostDeltaLine">
+    <span>MODEL N-1</span>
+    <b id="ghostDeltaValue" data-ghost-delta>--.--</b>
+  </div>
+  <span id="ghostSectorLabel">NO PRIOR MODEL // SET THE LINE</span>
+</section>
 
 <div class="hud" id="msg"></div>
 <div class="hud" id="launchCue" aria-hidden="true"><b>Hold thrust</b> // steer clear // <b>Shift to burst</b></div>
@@ -1159,6 +1559,15 @@
             <button class="setupOption" type="button" data-driver="sam" aria-pressed="false">Sam Altman<small>Unofficial text-only tribute</small></button>
           </div>
         </fieldset>
+        <fieldset class="setupGroup" id="contractSelect">
+          <legend>Mission contract</legend>
+          <div class="setupChoices" role="group" aria-label="mission contract">
+            <button class="setupOption" type="button" data-contract="sprint" aria-pressed="true">Sprint<small>Claim HELIOS by any means</small></button>
+            <button class="setupOption" type="button" data-contract="full-payload" aria-pressed="false">Full Payload<small>Recover all eight data cores</small></button>
+            <button class="setupOption" type="button" data-contract="clean-uplink" aria-pressed="false">Clean Uplink<small>Finish with zero wall or rival contact</small></button>
+            <button class="setupOption" type="button" data-contract="slingshot-master" aria-pressed="false">Slingshot Master<small>Deploy two legal slingshots</small></button>
+          </div>
+        </fieldset>
       </div>
       <p class="setupNote">Unofficial text-only tribute // no likeness, endorsement, or cloned voice</p>
     </section>
@@ -1182,6 +1591,55 @@
       <div class="resultStat"><small>Data cores</small><b id="resultCores">0 / 8</b></div>
       <div class="resultStat slingshotStat"><small>Slingshots</small><b id="resultSlingshots">0</b></div>
     </div>
+    <section class="resultContract" id="resultContract" data-status="pending" aria-labelledby="resultContractName">
+      <div class="resultContractName">
+        <small>Mission contract</small>
+        <b id="resultContractName">SPRINT</b>
+      </div>
+      <div class="resultContractOutcome">
+        <small>Contract outcome</small>
+        <strong id="resultContractStatus">TELEMETRY PENDING</strong>
+        <output id="resultContractProgress">0 / 1 COMPLETE</output>
+      </div>
+    </section>
+    <section class="sectorBreakdown" id="sectorBreakdown" aria-labelledby="sectorBreakdownTitle">
+      <div class="sectorBreakdownHead">
+        <h3 id="sectorBreakdownTitle">Sector telemetry // MODEL N-1</h3>
+        <output id="resultPbDelta">NO PRIOR MODEL</output>
+      </div>
+      <ol id="sectorBreakdownList">
+        <li class="sectorSplit" data-sector-code="01" data-status="neutral">
+          <span class="sectorSplitCode">01</span>
+          <span class="sectorSplitCopy"><b class="sectorSplitName">Launch Array</b><time class="sectorSplitTime" data-sector-time>--:--.--</time></span>
+          <output class="sectorSplitDelta" data-sector-delta>--.--</output>
+        </li>
+        <li class="sectorSplit" data-sector-code="02" data-status="neutral">
+          <span class="sectorSplitCode">02</span>
+          <span class="sectorSplitCopy"><b class="sectorSplitName">Karman Climb</b><time class="sectorSplitTime" data-sector-time>--:--.--</time></span>
+          <output class="sectorSplitDelta" data-sector-delta>--.--</output>
+        </li>
+        <li class="sectorSplit" data-sector-code="03" data-status="neutral">
+          <span class="sectorSplitCode">03</span>
+          <span class="sectorSplitCopy"><b class="sectorSplitName">Lunar Slingshot</b><time class="sectorSplitTime" data-sector-time>--:--.--</time></span>
+          <output class="sectorSplitDelta" data-sector-delta>--.--</output>
+        </li>
+        <li class="sectorSplit" data-sector-code="04" data-status="neutral">
+          <span class="sectorSplitCode">04</span>
+          <span class="sectorSplitCopy"><b class="sectorSplitName">Dark-Side Switchback</b><time class="sectorSplitTime" data-sector-time>--:--.--</time></span>
+          <output class="sectorSplitDelta" data-sector-delta>--.--</output>
+        </li>
+        <li class="sectorSplit" data-sector-code="05" data-status="neutral">
+          <span class="sectorSplitCode">05</span>
+          <span class="sectorSplitCopy"><b class="sectorSplitName">Quantum Stream</b><time class="sectorSplitTime" data-sector-time>--:--.--</time></span>
+          <output class="sectorSplitDelta" data-sector-delta>--.--</output>
+        </li>
+        <li class="sectorSplit" data-sector-code="06" data-status="neutral">
+          <span class="sectorSplitCode">06</span>
+          <span class="sectorSplitCopy"><b class="sectorSplitName">Compute Array</b><time class="sectorSplitTime" data-sector-time>--:--.--</time></span>
+          <output class="sectorSplitDelta" data-sector-delta>--.--</output>
+        </li>
+      </ol>
+    </section>
     <div class="resultsTableWrap" tabindex="0" aria-label="full race classification">
       <table>
         <thead><tr><th>#</th><th>Lab</th><th>Arrival</th></tr></thead>
@@ -1189,7 +1647,8 @@
       </table>
     </div>
     <div class="resultsActions">
-      <button class="btn" id="againBtn">Run it back</button>
+      <button class="btn pb" id="racePbBtn" data-action="race-pb" disabled>Race my PB</button>
+      <button class="btn ghost" id="againBtn">Run it back</button>
       <button class="btn ghost" id="setupBtn">Change setup</button>
     </div>
   </div>

@@ -184,7 +184,8 @@ if (initial.track.length < 2_600) errors.push(`track too short: ${initial.track.
 if (initial.track.halfWidth < 11) errors.push(`track too narrow: ${initial.track.halfWidth}`);
 if (!raced.finished) errors.push('player did not complete the orbital sprint');
 if (!raced.ships.every(ship => Number.isFinite(ship.speed))) errors.push('non-finite rival telemetry');
-if (raced.audioCache.decoded < 2 || raced.audioCache.fetches > 31) {
+// Thirty-one full-line calls plus one deduplicated 49-clause audio sprite.
+if (raced.audioCache.decoded < 2 || raced.audioCache.fetches > 32) {
   errors.push(`narrator cache not warm: ${JSON.stringify(raced.audioCache)}`);
 }
 if (menuNarratorCache.decoded < 2) {
@@ -216,7 +217,7 @@ if (!slingshot.activeCue.visible ||
 }
 if (raced.results.subtitle.includes('SAM ALTMAN') ||
     !/^OPENAI (?:reached the HELIOS array first|classified P\d+ of \d+)$/.test(raced.results.subtitle) ||
-    !raced.results.meta.startsWith('APEX PROTOCOL // UNOFFICIAL TEXT-ONLY TRIBUTE // ') ||
+    !raced.results.meta.startsWith('APEX // SPRINT // UNOFFICIAL TEXT-ONLY TRIBUTE // ') ||
     raced.results.driver !== 'SAM ALTMAN' ||
     raced.results.protocol !== 'APEX' ||
     !/OPENAI \/ SAM ALTMAN/.test(raced.results.playerRow)) {
@@ -224,7 +225,7 @@ if (raced.results.subtitle.includes('SAM ALTMAN') ||
 }
 if (!raced.results.hasStinger ||
     !raced.results.hasSlingshotStat ||
-    !/P12 → P\d{2} \/\/ .+ \/\/ \d+ SLINGSHOTS/.test(raced.results.stinger) ||
+    !/^CONTRACT (?:SECURED|MISSED) \/\/ P12 → P\d{2} \/\/ .+ \/\/ \d+ SLINGSHOTS/.test(raced.results.stinger) ||
     !/^\d+$/.test(raced.results.slingshots) ||
     Number(raced.results.slingshots) < 1) {
   errors.push(`results payoff missing: ${JSON.stringify(raced.results)}`);

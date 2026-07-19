@@ -229,11 +229,43 @@ const DRIVER_PROFILES = Object.freeze({
   }),
 });
 
+const CONTRACT_PRESETS = Object.freeze({
+  sprint: Object.freeze({
+    id: 'sprint',
+    label: 'SPRINT',
+    short: 'FIRST TO HELIOS',
+    describe: 'Pure position and time. Claim the array.',
+  }),
+  'full-payload': Object.freeze({
+    id: 'full-payload',
+    label: 'FULL PAYLOAD',
+    short: 'SECURE 8 DATA CORES',
+    describe: 'Collect every off-line data core before classification.',
+  }),
+  'clean-uplink': Object.freeze({
+    id: 'clean-uplink',
+    label: 'CLEAN UPLINK',
+    short: 'NO CONTACT',
+    describe: 'Reach HELIOS without touching a wall or rival.',
+  }),
+  'slingshot-master': Object.freeze({
+    id: 'slingshot-master',
+    label: 'SLINGSHOT MASTER',
+    short: 'DEPLOY 2 SLINGSHOTS',
+    describe: 'Build and fire at least two race-legal wake surges.',
+  }),
+});
+
 const STORAGE_KEYS = Object.freeze({
   difficulty: 'ai-race:difficulty:v1',
   driver: 'ai-race:driver:v1',
+  contract: 'ai-race:contract:v1',
   records: 'ai-race:records:v1',
+  ghosts: 'ai-race:ghosts:v1',
 });
+
+const query = new URLSearchParams(location.search);
+const showcaseMode = query.get('showcase') === '1';
 
 function storedChoice(key, choices, fallback) {
   try {
@@ -245,18 +277,22 @@ function storedChoice(key, choices, fallback) {
 }
 
 function queryChoice(name, choices) {
-  const value = new URLSearchParams(location.search).get(name);
+  const value = query.get(name);
   return choices[value] ? value : null;
 }
 
 const setupSelection = {
   difficulty: queryChoice('difficulty', DIFFICULTY_PRESETS) ||
-    storedChoice(STORAGE_KEYS.difficulty, DIFFICULTY_PRESETS, 'pro'),
+    (showcaseMode ? 'pro' : storedChoice(STORAGE_KEYS.difficulty, DIFFICULTY_PRESETS, 'pro')),
   driver: queryChoice('driver', DRIVER_PROFILES) ||
-    storedChoice(STORAGE_KEYS.driver, DRIVER_PROFILES, 'pilot'),
+    (showcaseMode ? 'sam' : storedChoice(STORAGE_KEYS.driver, DRIVER_PROFILES, 'pilot')),
+  contract: queryChoice('contract', CONTRACT_PRESETS) ||
+    (showcaseMode ? 'sprint' : storedChoice(STORAGE_KEYS.contract, CONTRACT_PRESETS, 'sprint')),
 };
 const activeDifficulty = () => DIFFICULTY_PRESETS[setupSelection.difficulty];
 const activeDriver = () => DRIVER_PROFILES[setupSelection.driver];
+const activeContract = () => CONTRACT_PRESETS[setupSelection.contract];
+const recordKey = () => `${setupSelection.difficulty}:${setupSelection.contract}`;
 function loadRecords() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.records) || '{}');
@@ -266,6 +302,31 @@ function loadRecords() {
   }
 }
 const raceRecords = loadRecords();
+function loadGhosts() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.ghosts) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+const raceGhosts = loadGhosts();
+
+function seedHash(value) {
+  let hash = 0x811c9dc5;
+  for (const character of String(value)) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function selectedRunSeed() {
+  const requested = Number.parseInt(query.get('seed') || '', 10);
+  if (Number.isFinite(requested)) return requested >>> 0;
+  return seedHash(`${setupSelection.difficulty}:${setupSelection.contract}:${showcaseMode ? 'showcase' : 'standard'}`);
+}
+let raceRng = mulberry32(selectedRunSeed());
 
 // ---------- roster ----------
 const ROSTER = [
@@ -1089,7 +1150,9 @@ function updateStartLights() {
 // HELIOS: a monumental orbital data center wrapped around the finish vector.
 const heliosDynamic = {
   station: null, ring: null, inner: null, ringEnergy: null,
-  glow: null, beacon: null, beam: null, panels: [],
+  glow: null, halo: null, nodes: null, beacon: null, beam: null, panels: [],
+  rackCores: [], claimRings: [], claimBanner: null, claimBannerCanvas: null,
+  claimBannerContext: null, metal: null, white: null, coreMaterial: null,
 };
 {
   // Put the destination just before the finish seam: it stays behind the
@@ -1115,11 +1178,14 @@ const heliosDynamic = {
     emissive: 0x16231f, emissiveIntensity: .18,
   });
   const coreMat = new THREE.MeshBasicMaterial({ color: 0xdfff47, fog: false });
-  coreMat.color.multiplyScalar(1.9);
+  coreMat.color.multiplyScalar(1.15);
+  heliosDynamic.metal = metal;
+  heliosDynamic.white = white;
+  heliosDynamic.coreMaterial = coreMat;
   const ringMetal = metal.clone();
   ringMetal.emissive.setHex(0x176486);
-  ringMetal.emissiveIntensity = 2.1;
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(42, 3.2, 14, 84), ringMetal);
+  ringMetal.emissiveIntensity = .35;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(42, 2.2, 14, 84), ringMetal);
   station.add(ring);
   heliosDynamic.ring = ring;
   const inner = new THREE.Mesh(new THREE.TorusGeometry(35.8, .48, 8, 84), coreMat);
@@ -1130,7 +1196,7 @@ const heliosDynamic = {
     new THREE.MeshBasicMaterial({
       color: 0x6cecff,
       transparent: true,
-      opacity: .82,
+      opacity: .44,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: true,
@@ -1138,19 +1204,20 @@ const heliosDynamic = {
     }),
   );
   station.add(halo);
+  heliosDynamic.halo = halo;
   const ringEnergy = new THREE.Mesh(
     new THREE.TorusGeometry(42, .64, 8, 112),
     new THREE.MeshBasicMaterial({
       color: 0x6cecff,
       transparent: true,
-      opacity: .92,
+      opacity: .54,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: true,
       fog: false,
     }),
   );
-  ringEnergy.material.color.multiplyScalar(1.7);
+  ringEnergy.material.color.multiplyScalar(1.05);
   station.add(ringEnergy);
   heliosDynamic.ringEnergy = ringEnergy;
   const nodeGeometry = new THREE.SphereGeometry(.78, 10, 7);
@@ -1160,7 +1227,7 @@ const heliosDynamic = {
     depthWrite: false,
     fog: false,
   });
-  nodeMaterial.color.multiplyScalar(2.2);
+  nodeMaterial.color.multiplyScalar(1.35);
   const ringNodes = new THREE.InstancedMesh(nodeGeometry, nodeMaterial, 20);
   const nodeMatrix = new THREE.Matrix4();
   for (let i = 0; i < 20; i++) {
@@ -1170,6 +1237,7 @@ const heliosDynamic = {
   }
   ringNodes.instanceMatrix.needsUpdate = true;
   station.add(ringNodes);
+  heliosDynamic.nodes = ringNodes;
   const stationGlow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex,
     color: 0x65dfff,
@@ -1199,6 +1267,7 @@ const heliosDynamic = {
     core.position.set(Math.cos(a) * 27.5, Math.sin(a) * 27.5, -1.8);
     core.rotation.z = a + Math.PI / 2;
     station.add(core);
+    heliosDynamic.rackCores.push(core);
   }
   for (const side of [-1, 1]) {
     const boom = new THREE.Mesh(new THREE.BoxGeometry(52, 1.1, 1.1), metal);
@@ -1239,6 +1308,51 @@ const heliosDynamic = {
   beam.position.z = -54;
   station.add(beam);
   heliosDynamic.beam = beam;
+
+  const claimCanvas = document.createElement('canvas');
+  claimCanvas.width = 1024;
+  claimCanvas.height = 192;
+  const claimContext = claimCanvas.getContext('2d');
+  const claimTexture = new THREE.CanvasTexture(claimCanvas);
+  claimTexture.colorSpace = THREE.SRGBColorSpace;
+  const claimBanner = new THREE.Mesh(
+    new THREE.PlaneGeometry(38, 7.1),
+    new THREE.MeshBasicMaterial({
+      map: claimTexture,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: false,
+      fog: false,
+    }),
+  );
+  claimBanner.name = 'HELIOS_CLAIM_BANNER';
+  claimBanner.position.set(0, 17.5, -5);
+  claimBanner.rotation.y = Math.PI;
+  claimBanner.renderOrder = 12;
+  station.add(claimBanner);
+  heliosDynamic.claimBanner = claimBanner;
+  heliosDynamic.claimBannerCanvas = claimCanvas;
+  heliosDynamic.claimBannerContext = claimContext;
+
+  for (let i = 0; i < 3; i++) {
+    const claimRing = new THREE.Mesh(
+      new THREE.TorusGeometry(43.8, .085 + i * .022, 6, 96),
+      new THREE.MeshBasicMaterial({
+        color: 0xdfff47,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      }),
+    );
+    claimRing.name = `HELIOS_CLAIM_WAVE_${i + 1}`;
+    claimRing.position.z = -1.2 - i * .6;
+    station.add(claimRing);
+    heliosDynamic.claimRings.push(claimRing);
+  }
   scene.add(station);
 }
 
@@ -1589,6 +1703,66 @@ function makeShip(spec) {
   };
 }
 
+function makeGhostShip() {
+  const group = new THREE.Group();
+  group.name = 'MODEL_N_MINUS_1_GHOST';
+  const lean = new THREE.Group();
+  group.add(lean);
+  const bodyMaterial = new THREE.MeshBasicMaterial({
+    color: 0x6cecff,
+    transparent: true,
+    opacity: .115,
+    wireframe: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const signalMaterial = new THREE.MeshBasicMaterial({
+    color: 0xdfff47,
+    transparent: true,
+    opacity: .48,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const glassMaterial = new THREE.MeshBasicMaterial({
+    color: 0x9fefff,
+    transparent: true,
+    opacity: .16,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const hull = new THREE.Mesh(SHIP_GEOMETRY.paint, bodyMaterial);
+  const dark = new THREE.Mesh(SHIP_GEOMETRY.dark, bodyMaterial);
+  const trim = new THREE.Mesh(SHIP_GEOMETRY.trim, signalMaterial);
+  const engines = new THREE.Mesh(SHIP_GEOMETRY.engines, signalMaterial);
+  const canopy = new THREE.Mesh(SHIP_GEOMETRY.canopy, glassMaterial);
+  canopy.position.set(0, .39, .36);
+  lean.add(hull, dark, trim, engines, canopy);
+  const echoA = new THREE.Mesh(
+    new THREE.TorusGeometry(1.62, .025, 6, 32),
+    signalMaterial,
+  );
+  echoA.rotation.x = Math.PI / 2;
+  echoA.position.y = .2;
+  group.add(echoA);
+  const echoB = echoA.clone();
+  echoB.scale.setScalar(1.32);
+  echoB.material = signalMaterial;
+  echoB.position.z = -.3;
+  group.add(echoB);
+  group.visible = false;
+  group.renderOrder = 4;
+  group.traverse(object => {
+    if (object.isMesh) {
+      object.frustumCulled = false;
+      object.renderOrder = 4;
+    }
+  });
+  return { group, lean, echoA, echoB, materials: [bodyMaterial, signalMaterial, glassMaterial] };
+}
+
 // engine trail ribbons
 const TRAIL_N = 46;
 function makeTrail(spec) {
@@ -1663,8 +1837,8 @@ function newShipState(spec, gridSlot) {
     lap: 0, cps: [false, false],
     lapStart: 0, lapTimes: [], best: Infinity, finished: false, finishTime: 0,
     wrongWay: 0, stuck: 0, hitWall: false, wallSide: 0, impactSerial: 0,
-    wx: 0, wy: 0, wz: 0, roll: 0, pitch: 0, prevVF: 0, latA: 0, bobPhase: rng() * 6.28,
-    aiBias: (spec.lane ?? 0) + (rng() - 0.5) * 0.8,
+    wx: 0, wy: 0, wz: 0, roll: 0, pitch: 0, prevVF: 0, latA: 0, bobPhase: raceRng() * 6.28,
+    aiBias: (spec.lane ?? 0) + (raceRng() - 0.5) * 0.8,
     aiBoostT: 0,
   };
 }
@@ -1970,6 +2144,7 @@ function stepShip(c, raceTime, freeze) {
         c.finished = true;
         c.finishTime = raceTime;
         c.finishOrder = ships.filter(ship => ship.finished).length;
+        if (c.finishOrder === 1) startHeliosClaim(c);
       }
     }
     if (c.finished) c.lapProgress = L;
@@ -2119,8 +2294,89 @@ const state = {
   finishDelay: -1, countdownBeat: null,
   difficulty: setupSelection.difficulty,
   driver: setupSelection.driver,
+  contract: setupSelection.contract,
+  runSeed: selectedRunSeed(),
 };
 let raceControl = null;
+
+const showdown = {
+  active: false,
+  elapsed: 0,
+  stage: 'idle',
+  winner: null,
+  winnerColor: 0x6cecff,
+  rank: null,
+  margin: null,
+  stationClaimed: false,
+  beamActive: false,
+  bannerPaintedFor: null,
+};
+
+function paintHeliosClaimBanner(winnerName, accent) {
+  if (!heliosDynamic.claimBannerContext || showdown.bannerPaintedFor === winnerName) return;
+  showdown.bannerPaintedFor = winnerName;
+  const context = heliosDynamic.claimBannerContext;
+  const canvas = heliosDynamic.claimBannerCanvas;
+  const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = 'rgba(2, 7, 12, .96)';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = accentCss;
+  context.fillRect(0, 0, 18, canvas.height);
+  context.strokeStyle = accentCss;
+  context.lineWidth = 6;
+  context.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+  context.fillStyle = 'rgba(244,247,245,.62)';
+  context.font = '900 30px Arial Narrow, Arial, sans-serif';
+  context.letterSpacing = '8px';
+  context.fillText('HELIOS ORBITAL COMPUTE', 58, 56);
+  context.fillStyle = '#f4f7f5';
+  context.font = '900 66px Arial Narrow, Arial, sans-serif';
+  context.fillText(`${winnerName} // ARRAY CLAIMED`, 58, 132);
+  heliosDynamic.claimBanner.material.map.needsUpdate = true;
+}
+
+function startHeliosClaim(winner) {
+  if (!winner || showdown.active) return false;
+  showdown.active = true;
+  showdown.elapsed = 0;
+  showdown.stage = 'handshake';
+  showdown.winner = winner.spec?.name || winner.name || 'UNKNOWN';
+  showdown.winnerColor = winner.spec?.color ?? winner.color ?? 0x6cecff;
+  showdown.rank = winner === player ? 1 : ranking().indexOf(player) + 1;
+  showdown.margin = null;
+  showdown.stationClaimed = false;
+  showdown.beamActive = false;
+  showdown.bannerPaintedFor = null;
+  paintHeliosClaimBanner(showdown.winner, showdown.winnerColor);
+  return true;
+}
+
+function updateShowdownMargin() {
+  if (!showdown.active || showdown.margin !== null) return;
+  const order = ranking();
+  if (!order[0]?.finished || !order[1]?.finished) return;
+  showdown.margin = Math.max(0, order[1].finishTime - order[0].finishTime);
+}
+
+function advanceShowdown(dt) {
+  if (!showdown.active || dt <= 0) return;
+  showdown.elapsed += dt;
+  showdown.stationClaimed = showdown.elapsed >= 2.15;
+  showdown.beamActive = showdown.elapsed >= 3.45;
+  showdown.stage = showdown.elapsed < .45
+    ? 'handshake'
+    : showdown.elapsed < 2.15
+      ? 'cascade'
+      : showdown.elapsed < 3.45
+        ? 'claimed'
+        : showdown.elapsed < 5.4
+          ? 'beam'
+          : showdown.elapsed < 7.6
+            ? 'hero'
+            : 'complete';
+  updateShowdownMargin();
+}
 
 const ships = ROSTER.map((spec, i) => {
   const st = newShipState(spec, i);
@@ -2142,6 +2398,183 @@ const ships = ROSTER.map((spec, i) => {
   return st;
 });
 const player = ships.find(c => c.spec.player);
+const ghostVisual = makeGhostShip();
+scene.add(ghostVisual.group);
+let activeGhost = null;
+let currentGhostDelta = null;
+let ghostRecorder = null;
+let lastResult = null;
+
+const ghostRound = (value, precision = 3) => {
+  const scale = 10 ** precision;
+  return Math.round(value * scale) / scale;
+};
+
+function ghostForSelection() {
+  if (showcaseMode) return null;
+  const candidate = raceGhosts[recordKey()];
+  if (!candidate || candidate.version !== 1 || candidate.seed !== selectedRunSeed() ||
+      !Array.isArray(candidate.samples) || candidate.samples.length < 2) return null;
+  return candidate;
+}
+
+function startGhostRecording() {
+  activeGhost = ghostForSelection();
+  currentGhostDelta = null;
+  ghostRecorder = {
+    seed: state.runSeed,
+    key: recordKey(),
+    nextSample: 0,
+    samples: [],
+    boundaries: [0, null, null, null, null, null, null],
+    lastProgress: player.lapProgress ?? player.progress,
+    finished: false,
+  };
+  ghostVisual.group.visible = Boolean(activeGhost);
+}
+
+function recordGhostFrame(force = false) {
+  if (!ghostRecorder || state.phase !== 'race') return;
+  const time = Math.max(0, state.raceTime);
+  const progress = Math.max(
+    ghostRecorder.lastProgress,
+    THREE.MathUtils.clamp(player.lapProgress ?? player.progress, 0, L),
+  );
+  ghostRecorder.lastProgress = progress;
+  for (let i = 1; i < SECTORS.length; i++) {
+    if (ghostRecorder.boundaries[i] === null && progress >= SECTORS[i].f * L) {
+      ghostRecorder.boundaries[i] = ghostRound(time);
+    }
+  }
+  if (force || time + 1e-6 >= ghostRecorder.nextSample) {
+    ghostRecorder.samples.push([
+      ghostRound(time),
+      ghostRound(progress, 2),
+      ghostRound(player.lat),
+      ghostRound(player.psi),
+    ]);
+    ghostRecorder.nextSample = time + .1;
+  }
+  if (player.finished && !ghostRecorder.finished) {
+    ghostRecorder.finished = true;
+    ghostRecorder.boundaries[6] = ghostRound(player.finishTime);
+    const last = ghostRecorder.samples[ghostRecorder.samples.length - 1];
+    if (!last || Math.abs(last[0] - player.finishTime) > .001) {
+      ghostRecorder.samples.push([
+        ghostRound(player.finishTime),
+        ghostRound(L, 2),
+        ghostRound(player.lat),
+        ghostRound(player.psi),
+      ]);
+    }
+  }
+}
+
+function ghostTimeAtProgress(ghost, progress) {
+  const samples = ghost?.samples;
+  if (!samples?.length) return null;
+  if (progress <= samples[0][1]) return samples[0][0];
+  let low = 0;
+  let high = samples.length - 1;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (samples[mid][1] < progress) low = mid + 1;
+    else high = mid;
+  }
+  const next = samples[low];
+  const previous = samples[Math.max(0, low - 1)];
+  const span = next[1] - previous[1];
+  const mix = span > .001 ? THREE.MathUtils.clamp((progress - previous[1]) / span, 0, 1) : 0;
+  return THREE.MathUtils.lerp(previous[0], next[0], mix);
+}
+
+function ghostSampleAtTime(ghost, time) {
+  const samples = ghost?.samples;
+  if (!samples?.length) return null;
+  if (time <= samples[0][0]) return samples[0];
+  if (time >= samples[samples.length - 1][0]) return samples[samples.length - 1];
+  let low = 0;
+  let high = samples.length - 1;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (samples[mid][0] < time) low = mid + 1;
+    else high = mid;
+  }
+  const next = samples[low];
+  const previous = samples[Math.max(0, low - 1)];
+  const span = next[0] - previous[0];
+  const mix = span > .001 ? THREE.MathUtils.clamp((time - previous[0]) / span, 0, 1) : 0;
+  return [
+    time,
+    THREE.MathUtils.lerp(previous[1], next[1], mix),
+    THREE.MathUtils.lerp(previous[2], next[2], mix),
+    THREE.MathUtils.lerp(previous[3], next[3], mix),
+  ];
+}
+
+function syncGhostVisual(t) {
+  const visible = Boolean(
+    activeGhost &&
+    (state.phase === 'countdown' || state.phase === 'race') &&
+    !player.finished,
+  );
+  ghostVisual.group.visible = visible;
+  if (!visible) return;
+  const sample = ghostSampleAtTime(activeGhost, Math.max(0, state.raceTime));
+  if (!sample) {
+    ghostVisual.group.visible = false;
+    return;
+  }
+  const [, progress, lat, psi] = sample;
+  const s = wrapS(startS + progress);
+  const f = frameAt(s);
+  const cosP = Math.cos(psi);
+  const sinP = Math.sin(psi);
+  _Z.set(
+    f.t[0] * cosP + f.r[0] * sinP,
+    f.t[1] * cosP + f.r[1] * sinP,
+    f.t[2] * cosP + f.r[2] * sinP,
+  );
+  _Y.set(f.u[0], f.u[1], f.u[2]);
+  _X.crossVectors(_Y, _Z).normalize();
+  _shipM.makeBasis(_X, _Y, _Z);
+  ghostVisual.group.quaternion.setFromRotationMatrix(_shipM);
+  const phase = t * 4.4;
+  ghostVisual.group.position.set(
+    f.p[0] + f.r[0] * lat + f.u[0] * (.58 + Math.sin(phase) * .035),
+    f.p[1] + f.r[1] * lat + f.u[1] * (.58 + Math.sin(phase) * .035),
+    f.p[2] + f.r[2] * lat + f.u[2] * (.58 + Math.sin(phase) * .035),
+  );
+  ghostVisual.echoA.scale.setScalar(1 + (Math.sin(phase) + 1) * .08);
+  ghostVisual.echoB.scale.setScalar(1.28 + (Math.sin(phase + 1.4) + 1) * .11);
+  currentGhostDelta = ghostTimeAtProgress(
+    activeGhost,
+    THREE.MathUtils.clamp(player.lapProgress ?? player.progress, 0, L),
+  );
+  if (currentGhostDelta !== null) currentGhostDelta = state.raceTime - currentGhostDelta;
+}
+
+function currentSectorDeltas() {
+  const currentBoundaries = ghostRecorder?.boundaries || [0, null, null, null, null, null, null];
+  const bestBoundaries = activeGhost?.boundaries || [0, null, null, null, null, null, null];
+  return SECTORS.map((sector, index) => {
+    const currentEnd = currentBoundaries[index + 1];
+    const currentStart = currentBoundaries[index];
+    const bestEnd = bestBoundaries[index + 1];
+    const bestStart = bestBoundaries[index];
+    const current = currentEnd !== null && currentStart !== null ? currentEnd - currentStart : null;
+    const pb = bestEnd !== null && bestStart !== null ? bestEnd - bestStart : null;
+    const delta = current !== null && pb !== null ? current - pb : null;
+    return {
+      code: sector.code,
+      current,
+      pb,
+      delta,
+      status: delta === null ? 'pending' : (delta <= 0 ? 'ahead' : 'behind'),
+    };
+  });
+}
+
 const spectacle = createSpectacle({
   THREE,
   renderer,
@@ -2158,7 +2591,47 @@ for (const c of ships) {
   c._sPrev = c.s;
 }
 
+function placeShipAtProgress(c, progress, lat, speed) {
+  c.progress = progress;
+  c.lapProgress = progress;
+  c.s = wrapS(startS + progress);
+  c._sPrev = c.s;
+  c.lat = lat;
+  c.psi = 0;
+  c.vA = speed;
+  c.vL = 0;
+  c.prevVF = speed;
+  c.cps = [progress > L / 3, progress > (2 * L) / 3];
+  const f = frameAt(c.s);
+  c.wx = f.p[0] + f.r[0] * lat + f.u[0] * .55;
+  c.wy = f.p[1] + f.r[1] * lat + f.u[1] * .55;
+  c.wz = f.p[2] + f.r[2] * lat + f.u[2] * .55;
+}
+
+function stageShowcaseGrid() {
+  if (!showcaseMode) return;
+  const target = ships.find(c => c.spec.name === 'ANTHROPIC') || ships[0];
+  const base = L * .835;
+  placeShipAtProgress(target, base + 17, -1.2, 72);
+  placeShipAtProgress(player, base, -1.05, 75);
+  let slot = 0;
+  for (const c of ships) {
+    if (c === player || c === target) continue;
+    placeShipAtProgress(c, base - 42 - slot * 9, ((slot % 2) * 2 - 1) * 3.8, 68 - slot * .18);
+    slot++;
+  }
+  player.boost = 88;
+  player.draftCharge = 1;
+  player.drafting = true;
+  player.draftTarget = target;
+  player.slingshotReady = true;
+  player.slingshotReadySerial = 1;
+  player.cleanRun = true;
+}
+
 function resetRace() {
+  state.runSeed = selectedRunSeed();
+  raceRng = mulberry32(state.runSeed);
   ships.forEach((c, i) => {
     const fresh = newShipState(c.spec, i);
     Object.assign(c, {
@@ -2178,8 +2651,28 @@ function resetRace() {
     c._sPrev = c.s;
     c.trail.hist.length = 0;
   });
+  stageShowcaseGrid();
+  startGhostRecording();
   state.raceTime = 0; state.countdown = 3.2; state.phase = 'countdown'; state.goTimer = 0;
   state.finishDelay = -1; state.countdownBeat = null;
+  state.contract = setupSelection.contract;
+  Object.assign(showdown, {
+    active: false,
+    elapsed: 0,
+    stage: 'idle',
+    winner: null,
+    winnerColor: 0x6cecff,
+    rank: null,
+    margin: null,
+    stationClaimed: false,
+    beamActive: false,
+    bannerPaintedFor: null,
+  });
+  if (heliosDynamic.claimBanner) heliosDynamic.claimBanner.material.opacity = 0;
+  heliosDynamic.claimRings.forEach(ring => {
+    ring.material.opacity = 0;
+    ring.scale.setScalar(1);
+  });
   resetMoments();
   for (const core of DATA_CORES) {
     core.collected = false;
@@ -2208,6 +2701,15 @@ function ranking() {
 
 function raceControlSnapshot() {
   const order = ranking();
+  const playerIndex = order.indexOf(player);
+  const ahead = playerIndex > 0 ? order[playerIndex - 1] : null;
+  const behind = playerIndex >= 0 && playerIndex < order.length - 1 ? order[playerIndex + 1] : null;
+  const playerSpeed = Math.hypot(player.vA, player.vL);
+  const gapTo = rival => rival
+    ? Math.max(0, rival.progress - player.progress)
+    : null;
+  const gapAhead = gapTo(ahead);
+  const gapBehind = behind ? Math.max(0, player.progress - behind.progress) : null;
   return {
     phase: state.phase,
     time: state.raceTime,
@@ -2216,7 +2718,15 @@ function raceControlSnapshot() {
       name: player.spec.name,
       driverId: activeDriver().id,
       driverName: activeDriver().name,
-      rank: order.indexOf(player) + 1,
+      rank: playerIndex + 1,
+      speed: playerSpeed,
+      remainingDistance: Math.max(0, L - (player.lapProgress ?? player.progress)),
+      adjacentAhead: ahead?.spec?.name || null,
+      adjacentBehind: behind?.spec?.name || null,
+      gapAhead,
+      gapBehind,
+      gapAheadSeconds: gapAhead === null ? null : gapAhead / Math.max(playerSpeed, 10),
+      closingRate: ahead ? playerSpeed - Math.hypot(ahead.vA, ahead.vL) : null,
       packets: player.packets,
       packetTotal: DATA_CORES.length,
       drafting: player.drafting,
@@ -2230,10 +2740,15 @@ function raceControlSnapshot() {
       hitWall: player.hitWall,
       impactSerial: player.impactSerial,
       finished: player.finished,
+      finishTime: player.finishTime,
     },
     order: order.map(c => ({
       name: c.spec.name,
       progress: c.progress,
+      speed: Math.hypot(c.vA, c.vL),
+      drafting: c.drafting,
+      slingshotReady: c.slingshotReady,
+      slingshotSerial: c.slingshotSerial,
       finished: c.finished,
       finishTime: c.finishTime,
     })),
@@ -2745,6 +3260,34 @@ function updateCamera(dt) {
 
   if (state.phase === 'race' && player.finished && state.finishDelay >= 0 &&
       !renderProfile.reducedMotion) {
+    if (showdown.active && showdown.elapsed >= 2.05 && showdown.elapsed < 5.45 &&
+        heliosDynamic.station) {
+      const stationFrame = frameAt((heliosDynamic.station.userData.trackFraction || 0) * L);
+      _fwd.set(stationFrame.t[0], stationFrame.t[1], stationFrame.t[2]);
+      _rightW.set(stationFrame.r[0], stationFrame.r[1], stationFrame.r[2]);
+      _upW.set(stationFrame.u[0], stationFrame.u[1], stationFrame.u[2])
+        .lerp(WORLD_UP, .3)
+        .normalize();
+      const reveal = THREE.MathUtils.clamp((showdown.elapsed - 2.05) / 3.4, 0, 1);
+      const orbitSide = Math.sin(player.finishTime * 2.7) >= 0 ? 1 : -1;
+      _want.copy(heliosDynamic.station.position)
+        .addScaledVector(_fwd, THREE.MathUtils.lerp(-118, -102, reveal))
+        .addScaledVector(_rightW, orbitSide * THREE.MathUtils.lerp(28, 42, reveal))
+        .addScaledVector(_upW, THREE.MathUtils.lerp(22, 32, reveal));
+      springVector(camPos, camVel, _want, 1.6, 1, Math.min(dt, .1));
+      _want.copy(heliosDynamic.station.position)
+        .addScaledVector(_upW, -2)
+        .addScaledVector(_fwd, 1);
+      springVector(camTgt, camTgtVel, _want, 1.8, 1, Math.min(dt, .1));
+      camUp.lerp(_upW, 1 - Math.exp(-3.5 * dt)).normalize();
+      camera.up.copy(camUp);
+      camera.position.copy(camPos);
+      camera.lookAt(camTgt);
+      camera.fov = THREE.MathUtils.damp(camera.fov, 58 - reveal * 3, 3.5, dt);
+      camera.updateProjectionMatrix();
+      player.mesh.visible = true;
+      return;
+    }
     const hero = THREE.MathUtils.clamp(state.finishDelay / 3, 0, 1);
     const eased = hero * hero * (3 - 2 * hero);
     const side = Math.sin(player.finishTime * 2.7) >= 0 ? 1 : -1;
@@ -3009,6 +3552,13 @@ const hud = {
   resultTime: document.getElementById('resultTime'),
   resultCores: document.getElementById('resultCores'),
   resultSlingshots: document.getElementById('resultSlingshots'),
+  resultContract: document.getElementById('resultContract'),
+  resultContractName: document.getElementById('resultContractName'),
+  resultContractStatus: document.getElementById('resultContractStatus'),
+  resultContractProgress: document.getElementById('resultContractProgress'),
+  resultPbDelta: document.getElementById('resultPbDelta'),
+  sectorBreakdownList: document.getElementById('sectorBreakdownList'),
+  racePb: document.getElementById('racePbBtn'),
   resultsStinger: document.getElementById('resultsStinger'),
   boostControlLabel: document.getElementById('burstControlLabel'),
   raceControl: document.getElementById('raceControl'),
@@ -3018,6 +3568,9 @@ const hud = {
   difficultyHud: document.getElementById('difficultyHud'),
   pilotSpeedLabel: document.getElementById('pilotSpeedLabel'),
   setupStatus: document.getElementById('setupStatus'),
+  ghostDelta: document.getElementById('ghostDelta'),
+  ghostDeltaValue: document.getElementById('ghostDeltaValue'),
+  ghostSectorLabel: document.getElementById('ghostSectorLabel'),
   touchBoost: document.getElementById('tboost'),
   start: document.getElementById('startBtn'),
 };
@@ -3153,21 +3706,29 @@ function persistSetupChoice(key, value) {
 function refreshSetupPresentation() {
   const difficulty = activeDifficulty();
   const driver = activeDriver();
+  const contract = activeContract();
   state.difficulty = difficulty.id;
   state.driver = driver.id;
+  state.contract = contract.id;
   document.body.dataset.difficulty = difficulty.id;
   document.body.dataset.driver = driver.id;
+  document.body.dataset.contract = contract.id;
   document.querySelectorAll('[data-difficulty]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.difficulty === difficulty.id));
   });
   document.querySelectorAll('[data-driver]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.driver === driver.id));
   });
-  hud.setupStatus.textContent = `${difficulty.label} // ${driver.name}`;
+  document.querySelectorAll('[data-contract]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.contract === contract.id));
+  });
+  hud.setupStatus.textContent = `${difficulty.label} // ${driver.name} // ${contract.label}`;
   hud.driverHud.textContent = driver.hudName;
   hud.difficultyHud.textContent = difficulty.label;
   hud.pilotSpeedLabel.textContent = driver.callsign;
-  hud.start.textContent = driver.id === 'sam' ? 'Launch as Sam' : 'Initiate launch';
+  hud.start.textContent = showcaseMode
+    ? 'Launch HELIOS showdown'
+    : (driver.id === 'sam' ? 'Launch as Sam' : 'Initiate launch');
   paintDriverBadge(player.driverBadge, driver);
   player.driverAccentMat?.color.set(driver.accent);
   player.shieldMat?.color.set(driver.accent);
@@ -3191,11 +3752,23 @@ function applyDriver(id, options = {}) {
   return true;
 }
 
+function applyContract(id, options = {}) {
+  if (!CONTRACT_PRESETS[id]) return false;
+  if (!options.force && state.phase !== 'menu' && state.phase !== 'results') return false;
+  setupSelection.contract = id;
+  if (options.persist !== false) persistSetupChoice(STORAGE_KEYS.contract, id);
+  refreshSetupPresentation();
+  return true;
+}
+
 for (const button of document.querySelectorAll('[data-difficulty]')) {
   button.addEventListener('click', () => applyDifficulty(button.dataset.difficulty));
 }
 for (const button of document.querySelectorAll('[data-driver]')) {
   button.addEventListener('click', () => applyDriver(button.dataset.driver));
+}
+for (const button of document.querySelectorAll('[data-contract]')) {
+  button.addEventListener('click', () => applyContract(button.dataset.contract));
 }
 for (const group of document.querySelectorAll('.setupChoices')) {
   const buttons = [...group.querySelectorAll('.setupOption')];
@@ -3298,13 +3871,64 @@ function launchRace() {
   resetRace();
 }
 hud.start.addEventListener('click', launchRace);
+if (showcaseMode && query.get('autostart') === '1') {
+  setTimeout(launchRace, 0);
+}
 document.getElementById('againBtn').addEventListener('click', () => resetRace());
+hud.racePb?.addEventListener('click', () => {
+  if (!raceGhosts[recordKey()]) return;
+  resetRace();
+});
 document.getElementById('setupBtn').addEventListener('click', showSetupMenu);
 document.getElementById('resumeBtn').addEventListener('click', () => { state.phase = 'race'; hud.pause.classList.remove('show'); });
 document.getElementById('pauseRestart').addEventListener('click', () => { hud.pause.classList.remove('show'); resetRace(); });
 hud.mute.addEventListener('click', () => setMuted(!state.muted));
 
 const fmt = t => !isFinite(t) ? '—' : `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
+
+function contractState(id = setupSelection.contract) {
+  const contract = CONTRACT_PRESETS[id] || CONTRACT_PRESETS.sprint;
+  const rank = ranking().indexOf(player) + 1;
+  let progress = 0;
+  let target = 1;
+  let completed = false;
+  let progressText = '0 / 1 COMPLETE';
+  if (contract.id === 'sprint') {
+    progress = player.finished && rank === 1 ? 1 : 0;
+    completed = progress === 1;
+    progressText = player.finished ? `FINAL CLASSIFICATION P${rank}` : `LIVE CLASSIFICATION P${rank}`;
+  } else if (contract.id === 'full-payload') {
+    progress = player.packets;
+    target = DATA_CORES.length;
+    completed = player.finished && progress >= target;
+    progressText = `${progress} / ${target} DATA CORES`;
+  } else if (contract.id === 'clean-uplink') {
+    progress = player.cleanRun ? 1 : 0;
+    completed = player.finished && player.cleanRun;
+    progressText = player.cleanRun ? 'UPLINK INTEGRITY CLEAN' : 'CONTACT RECORDED';
+  } else if (contract.id === 'slingshot-master') {
+    progress = player.slingshots;
+    target = 2;
+    completed = player.finished && progress >= target;
+    progressText = `${Math.min(progress, target)} / ${target} SLINGSHOTS`;
+  }
+  return {
+    id: contract.id,
+    name: contract.label,
+    progress,
+    target,
+    completed,
+    progressText,
+  };
+}
+
+function contractSnapshot() {
+  return {
+    selected: setupSelection.contract,
+    items: Object.keys(CONTRACT_PRESETS).map(id => contractState(id)),
+    result: lastResult?.contract || null,
+  };
+}
 
 // minimap
 const miniCtx = hud.mini.getContext('2d');
@@ -3429,6 +4053,19 @@ function updateHUD(dt) {
   for (const sector of SECTORS) if (missionProgress >= sector.f) activeSector = sector;
   hud.sectorName.textContent = activeSector.name;
   hud.sectorIndex.textContent = activeSector.code;
+  if (hud.ghostDelta) {
+    const available = Boolean(activeGhost);
+    const delta = available && Number.isFinite(currentGhostDelta) ? currentGhostDelta : null;
+    const status = delta === null ? 'neutral' : (delta <= 0 ? 'ahead' : 'behind');
+    hud.ghostDelta.dataset.available = String(available);
+    hud.ghostDelta.dataset.status = status;
+    hud.ghostDeltaValue.textContent = delta === null
+      ? '--.--'
+      : `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2)}`;
+    hud.ghostSectorLabel.textContent = available
+      ? `SECTOR ${activeSector.code} // ${status === 'ahead' ? 'GAINING' : status === 'behind' ? 'LOSING' : 'MATCHED'}`
+      : 'NO PRIOR MODEL // SET THE LINE';
+  }
   if (hud.touchBoost) {
     hud.touchBoost.textContent = 'BURST';
     hud.touchBoost.setAttribute('aria-label', 'inference burst');
@@ -3501,19 +4138,44 @@ function showResults() {
   hud.momentStamp?.classList.remove('live', 'danger');
   const driver = activeDriver();
   const difficulty = activeDifficulty();
-  const previous = raceRecords[difficulty.id] || null;
-  const newPersonalBest = player.finished &&
+  const contract = activeContract();
+  const key = recordKey();
+  const previous = raceRecords[key] || null;
+  const outcome = contractState();
+  const resultSectorDeltas = currentSectorDeltas();
+  const previousBestTime = Number.isFinite(previous?.bestTime) ? previous.bestTime : null;
+  const newPersonalBest = player.finished && outcome.completed &&
     (!Number.isFinite(previous?.bestTime) || player.finishTime < previous.bestTime);
   if (player.finished) {
-    raceRecords[difficulty.id] = {
-      bestTime: newPersonalBest ? player.finishTime : previous?.bestTime,
+    raceRecords[key] = {
+      bestTime: newPersonalBest ? player.finishTime : (previous?.bestTime ?? null),
       bestRank: Math.min(previous?.bestRank ?? ships.length, ranking().indexOf(player) + 1),
       bestCores: Math.max(previous?.bestCores ?? 0, player.packets),
+      bestSlingshots: Math.max(previous?.bestSlingshots ?? 0, player.slingshots),
+      completions: (previous?.completions ?? 0) + (outcome.completed ? 1 : 0),
     };
     try {
       localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(raceRecords));
     } catch {
       // A result should never fail because local persistence is unavailable.
+    }
+  }
+  if (newPersonalBest && ghostRecorder?.finished && !showcaseMode) {
+    const savedGhost = {
+      version: 1,
+      seed: state.runSeed,
+      difficulty: difficulty.id,
+      contract: contract.id,
+      bestTime: ghostRound(player.finishTime),
+      samples: ghostRecorder.samples,
+      boundaries: ghostRecorder.boundaries,
+      recordedAt: Date.now(),
+    };
+    raceGhosts[key] = savedGhost;
+    try {
+      localStorage.setItem(STORAGE_KEYS.ghosts, JSON.stringify(raceGhosts));
+    } catch {
+      // Ghost replay is enhancement only; classification must still complete.
     }
   }
   const rows = ranking().map((c, i) => {
@@ -3528,11 +4190,11 @@ function showResults() {
   hud.resultsSub.textContent = rank === 1
     ? 'OPENAI reached the HELIOS array first'
     : `OPENAI classified P${rank} of ${ships.length}`;
-  const record = raceRecords[difficulty.id];
+  const record = raceRecords[key];
   const tributeLabel = driver.tribute ? ' // UNOFFICIAL TEXT-ONLY TRIBUTE' : '';
   hud.resultsMeta.textContent = newPersonalBest
-    ? `${difficulty.label} PROTOCOL${tributeLabel} // NEW PERSONAL BEST`
-    : `${difficulty.label} PROTOCOL${tributeLabel} // PB ${record?.bestTime ? fmt(record.bestTime) : '—'}`;
+    ? `${difficulty.label} // ${contract.label}${tributeLabel} // NEW MODEL N-1`
+    : `${difficulty.label} // ${contract.label}${tributeLabel} // PB ${record?.bestTime ? fmt(record.bestTime) : '—'}`;
   const order = ranking();
   let gapText = '';
   if (player.finished && rank > 1 && order[0]?.finished) {
@@ -3543,12 +4205,48 @@ function showResults() {
   const positionsGained = ships.length - rank;
   const movement = positionsGained > 0 ? `+${positionsGained} POSITIONS` : 'GRID HELD';
   hud.resultsStinger.textContent =
+    `${outcome.completed ? 'CONTRACT SECURED' : 'CONTRACT MISSED'} // ` +
     `P${String(ships.length).padStart(2, '0')} → P${String(rank).padStart(2, '0')} // ${movement} // ${player.slingshots} SLINGSHOTS${gapText}`;
   hud.resultDriver.textContent = driver.name;
   hud.resultDifficulty.textContent = difficulty.label;
   hud.resultTime.textContent = player.finished ? fmt(player.finishTime) : 'DNF';
   hud.resultCores.textContent = `${player.packets} / ${DATA_CORES.length}`;
   hud.resultSlingshots.textContent = String(player.slingshots);
+  hud.resultContract.dataset.status = outcome.completed ? 'complete' : 'failed';
+  hud.resultContractName.textContent = contract.label;
+  hud.resultContractStatus.textContent = outcome.completed ? 'CONTRACT COMPLETE' : 'CONTRACT FAILED';
+  hud.resultContractProgress.textContent = outcome.progressText;
+
+  for (const sector of resultSectorDeltas) {
+    const item = hud.sectorBreakdownList?.querySelector(`[data-sector-code="${sector.code}"]`);
+    if (!item) continue;
+    item.dataset.status = sector.status === 'pending' ? 'neutral' : sector.status;
+    const time = item.querySelector('[data-sector-time]');
+    const delta = item.querySelector('[data-sector-delta]');
+    if (time) time.textContent = sector.current === null ? '—' : fmt(sector.current);
+    if (delta) {
+      delta.textContent = sector.delta === null
+        ? 'FIRST'
+        : `${sector.delta > 0 ? '+' : '−'}${Math.abs(sector.delta).toFixed(2)}`;
+    }
+  }
+  const totalDelta = previousBestTime === null || !player.finished
+    ? null
+    : player.finishTime - previousBestTime;
+  hud.resultPbDelta.textContent = totalDelta === null
+    ? (newPersonalBest ? 'MODEL N-1 CAPTURED' : 'NO PRIOR MODEL')
+    : `${totalDelta > 0 ? '+' : '−'}${Math.abs(totalDelta).toFixed(2)} TOTAL`;
+  hud.racePb.disabled = !raceGhosts[key];
+  hud.racePb.dataset.available = String(Boolean(raceGhosts[key]));
+  lastResult = {
+    rank,
+    time: player.finishTime,
+    newPersonalBest,
+    pbDelta: totalDelta,
+    contract: outcome,
+    sectors: resultSectorDeltas,
+  };
+  activeGhost = raceGhosts[key] || activeGhost;
   hud.results.classList.add('show');
 }
 
@@ -3571,7 +4269,10 @@ function physicsStep() {
     stepShip(c, state.raceTime, freeze);
   }
   collideShips(ships);
-  if (!freeze) state.raceTime += DT;
+  if (!freeze) {
+    state.raceTime += DT;
+    recordGhostFrame(player.finished);
+  }
 }
 
 const _shipM = new THREE.Matrix4(), _X = new THREE.Vector3(), _Y = new THREE.Vector3(), _Z = new THREE.Vector3();
@@ -3625,6 +4326,88 @@ function syncMeshes(t) {
 
 let last = performance.now(), acc = 0, testMode = false, testInput = null;
 let perfElapsed = 0, perfFrames = 0, perfGoodWindows = 0;
+const _claimAccent = new THREE.Color();
+const _claimNeutral = new THREE.Color(0x6cecff);
+const _claimCoreNeutral = new THREE.Color(0xdfff47).multiplyScalar(1.15);
+const _claimCoreTarget = new THREE.Color();
+const _claimNodeTarget = new THREE.Color();
+const _claimPanelNeutral = new THREE.Color(0x0b2453);
+const _claimPanelTarget = new THREE.Color();
+function updateHeliosPresentation(t) {
+  const motion = renderProfile.reducedMotion ? 0 : 1;
+  const elapsed = showdown.active ? showdown.elapsed : 0;
+  const claimLinear = THREE.MathUtils.clamp((elapsed - .2) / 2.65, 0, 1);
+  const claim = claimLinear * claimLinear * (3 - 2 * claimLinear);
+  const beamLinear = THREE.MathUtils.clamp((elapsed - 3.15) / 1.35, 0, 1);
+  const beamFx = beamLinear * beamLinear * (3 - 2 * beamLinear);
+  const heroFx = THREE.MathUtils.clamp((elapsed - 5.1) / 2.1, 0, 1);
+  _claimAccent.setHex(showdown.active ? showdown.winnerColor : 0x6cecff);
+  _claimPanelTarget.copy(_claimAccent).multiplyScalar(.42);
+  _claimCoreTarget.copy(_claimAccent).multiplyScalar(1.25);
+  _claimNodeTarget.copy(_claimAccent).multiplyScalar(1.35);
+
+  const finishPulse = showdown.active
+    ? (motion ? .5 + .5 * Math.sin(t * 7.5) : 1)
+    : 0;
+  if (heliosDynamic.ring) {
+    heliosDynamic.ring.rotation.z = t * (.08 + claim * .52 * motion);
+    heliosDynamic.ring.material.emissive.copy(_claimNeutral).lerp(_claimAccent, claim);
+    heliosDynamic.ring.material.emissiveIntensity = .35 + claim * (.35 + finishPulse * .1);
+  }
+  if (heliosDynamic.inner) {
+    heliosDynamic.inner.rotation.z = -t * (.17 + claim * .82 * motion);
+  }
+  if (heliosDynamic.coreMaterial) {
+    heliosDynamic.coreMaterial.color.copy(_claimCoreNeutral).lerp(_claimCoreTarget, claim);
+  }
+  if (heliosDynamic.ringEnergy) {
+    heliosDynamic.ringEnergy.material.color.copy(_claimNeutral).lerp(_claimAccent, claim).multiplyScalar(1.05);
+    heliosDynamic.ringEnergy.material.opacity = .54 + claim * .18;
+    const pulse = motion ? Math.sin(t * 7) * claim * .035 : 0;
+    heliosDynamic.ringEnergy.scale.setScalar(1 + pulse);
+  }
+  if (heliosDynamic.halo) {
+    heliosDynamic.halo.material.color.copy(_claimNeutral).lerp(_claimAccent, claim);
+    heliosDynamic.halo.material.opacity = .44 + claim * .26;
+  }
+  if (heliosDynamic.nodes?.material) {
+    heliosDynamic.nodes.material.color.copy(_claimCoreNeutral).lerp(_claimNodeTarget, claim);
+  }
+  if (heliosDynamic.glow) {
+    heliosDynamic.glow.material.color.copy(_claimNeutral).lerp(_claimAccent, claim);
+    heliosDynamic.glow.material.opacity = .16 + claim * (.28 + finishPulse * .1);
+    const heroScale = 90 + heroFx * 26;
+    heliosDynamic.glow.scale.set(heroScale, heroScale, 1);
+  }
+  if (heliosDynamic.beacon) {
+    heliosDynamic.beacon.color.copy(_claimCoreNeutral).lerp(_claimAccent, claim);
+    heliosDynamic.beacon.intensity = 9 + claim * 25 + beamFx * 42;
+  }
+  if (heliosDynamic.beam) {
+    heliosDynamic.beam.material.color.copy(_claimCoreNeutral).lerp(_claimAccent, claim);
+    heliosDynamic.beam.material.opacity = .055 + beamFx * .38;
+    heliosDynamic.beam.scale.set(1 + beamFx * .28, 1 + beamFx * 1.55, 1 + beamFx * .28);
+  }
+  if (heliosDynamic.claimBanner) {
+    const bannerIn = THREE.MathUtils.clamp((elapsed - 1.45) / .7, 0, 1);
+    heliosDynamic.claimBanner.material.opacity = bannerIn;
+    heliosDynamic.claimBanner.scale.setScalar(.92 + bannerIn * .08);
+  }
+  heliosDynamic.claimRings.forEach((ring, i) => {
+    const wave = THREE.MathUtils.clamp((elapsed - (2.05 + i * .48)) / 1.4, 0, 1);
+    ring.material.color.copy(_claimAccent);
+    ring.material.opacity = motion
+      ? Math.sin(wave * Math.PI) * .36
+      : (showdown.stationClaimed && i === 0 ? .18 : 0);
+    ring.scale.setScalar(.9 + wave * (.22 + i * .025));
+  });
+  heliosDynamic.panels.forEach((panel, i) => {
+    const cascade = THREE.MathUtils.clamp((elapsed - (.48 + i * .15)) / .82, 0, 1);
+    panel.rotation.y = Math.sin(t * .16 + i * Math.PI) * .12 * motion;
+    panel.material.emissive.copy(_claimPanelNeutral).lerp(_claimPanelTarget, cascade);
+    panel.material.emissiveIntensity = .75 + cascade * (2.1 + finishPulse * .55);
+  });
+}
 function monitorRenderPerformance(dt) {
   if (testMode || document.hidden || dt <= 0) return;
   // Count real stalls instead of discarding them at the simulation's 100 ms
@@ -3681,12 +4464,16 @@ function frame(now) {
     if (state.phase === 'race' && player.finished) {
       if (state.finishDelay < 0) state.finishDelay = 0;
       state.finishDelay += dt;
-      resultsReady = state.finishDelay >= 3 &&
-        (state.finishDelay >= 4.2 || ships.every(c => c.finished));
+      const presentationComplete = !showdown.active || showdown.elapsed >= 7.6;
+      resultsReady = state.finishDelay >= 2.8 &&
+        presentationComplete &&
+        (state.finishDelay >= 8.4 || ships.every(c => c.finished));
     }
   }
+  if (state.phase === 'race') advanceShowdown(dt);
   updateMoments(dt);
   syncMeshes(t);
+  syncGhostVisual(t);
   for (const c of ships) updateTrail(c, dt);
   updateParticles(dt);
   updateStartLights();
@@ -3703,19 +4490,7 @@ function frame(now) {
   earthDynamic.materials.forEach(m => {
     if (m.uniforms.uTime) m.uniforms.uTime.value = t;
   });
-  const heliosFx = renderProfile.reducedMotion ? 0 : momentLevel('finish');
-  if (heliosDynamic.ring) heliosDynamic.ring.rotation.z = t * (.08 + heliosFx * .42);
-  if (heliosDynamic.inner) heliosDynamic.inner.rotation.z = -t * (.17 + heliosFx * .7);
-  if (heliosDynamic.ringEnergy) {
-    heliosDynamic.ringEnergy.material.opacity = .92 + heliosFx * .08;
-    heliosDynamic.ringEnergy.scale.setScalar(1 + Math.sin(t * 7) * heliosFx * .028);
-  }
-  if (heliosDynamic.glow) heliosDynamic.glow.material.opacity = .16 + heliosFx * .18;
-  if (heliosDynamic.beacon) heliosDynamic.beacon.intensity = 9 + heliosFx * 28;
-  if (heliosDynamic.beam) heliosDynamic.beam.material.opacity = .075 + heliosFx * .1;
-  heliosDynamic.panels.forEach((panel, i) => {
-    panel.rotation.y = Math.sin(t * .16 + i * Math.PI) * .12;
-  });
+  updateHeliosPresentation(t);
   for (const m of window.__wallMats || []) m.uniforms.uT.value = t;
   for (const m of padMats) m.map.offset.y -= dt * 2.2;
   if (rechargeMat) rechargeMat.uniforms.uTime.value = t;
@@ -3750,6 +4525,65 @@ resize();
 camSnap();
 requestAnimationFrame(frame);
 
+function forceFinishForTest(options = {}) {
+  const rank = THREE.MathUtils.clamp(Math.round(options.rank ?? 1), 1, ships.length);
+  const finishTime = Math.max(1, Number(options.time ?? 42.18));
+  const rivals = ships.filter(c => c !== player);
+  const ordered = [...rivals.slice(0, rank - 1), player, ...rivals.slice(rank - 1)];
+  ordered.forEach((c, index) => {
+    c.finished = true;
+    c.finishOrder = index + 1;
+    c.finishTime = finishTime + (index - (rank - 1)) * .18;
+    c.progress = L;
+    c.lapProgress = L;
+    c.lap = LAPS;
+    c.cps = [false, false];
+    c.vA = 0;
+    c.vL = 0;
+  });
+  player.finishTime = finishTime;
+  player.packets = THREE.MathUtils.clamp(
+    Math.round(options.packets ?? player.packets),
+    0,
+    DATA_CORES.length,
+  );
+  player.cleanRun = options.cleanRun ?? player.cleanRun;
+  player.slingshots = Math.max(0, Math.round(options.slingshots ?? player.slingshots));
+  state.phase = 'race';
+  state.raceTime = finishTime;
+  state.finishDelay = 0;
+  Object.assign(showdown, {
+    active: false,
+    elapsed: 0,
+    stage: 'idle',
+    winner: null,
+    margin: null,
+    stationClaimed: false,
+    beamActive: false,
+  });
+  startHeliosClaim(ordered[0]);
+  updateShowdownMargin();
+  if (ghostRecorder) {
+    ghostRecorder.boundaries = [
+      0,
+      ...SECTORS.slice(1).map(sector => ghostRound(finishTime * sector.f)),
+      ghostRound(finishTime),
+    ];
+    ghostRecorder.finished = true;
+    ghostRecorder.lastProgress = L;
+    if (!ghostRecorder.samples.length) {
+      ghostRecorder.samples.push([0, 0, player.lat, player.psi]);
+    }
+    ghostRecorder.samples.push([ghostRound(finishTime), ghostRound(L, 2), player.lat, player.psi]);
+  }
+  triggerMoment('finish', { text: `LINK ACQUIRED // P${rank}`, hold: 2.7 });
+  raceControl.update(raceControlSnapshot());
+  syncMeshes(performance.now() / 1000);
+  updateHeliosPresentation(performance.now() / 1000);
+  renderFrame();
+  return { rank, finishTime, winner: ordered[0].spec.name };
+}
+
 // ---------- test harness (drives the same physics the player feels) ----------
 const testApi = {
   testMode(on) { testMode = !!on; if (on && state.phase === 'menu') resetRace(); },
@@ -3771,14 +4605,21 @@ const testApi = {
   renderOnce() {
     const t = performance.now() / 1000;
     syncMeshes(t);
+    syncGhostVisual(t);
     for (const c of ships) updateTrail(c, 1 / 60);
-    updateStartLights(); if (!camFrozen) camSnap(); hudClock = 1; updateHUD(0);
+    updateStartLights();
+    if (!camFrozen) {
+      if (state.phase === 'race' && player.finished && showdown.active) updateCamera(1 / 60);
+      else camSnap();
+    }
+    hudClock = 1; updateHUD(0);
     raceControl.update(raceControlSnapshot());
     spectacle.update({ time: t, player, ships, state });
     skyMats.forEach(m => { m.uniforms.uTime.value = t; });
     earthDynamic.materials.forEach(m => {
       if (m.uniforms.uTime) m.uniforms.uTime.value = t;
     });
+    updateHeliosPresentation(t);
     post.dynamics(t, Math.hypot(player.vA, player.vL), player.boosting, player.hitWall, moments);
     renderFrame();
   },
@@ -3791,6 +4632,9 @@ const testApi = {
       phase: state.phase, s: player.s, lat: player.lat, psi: player.psi,
       difficulty: setupSelection.difficulty,
       driver: setupSelection.driver,
+      contract: setupSelection.contract,
+      showcase: showcaseMode,
+      runSeed: state.runSeed,
       muted: state.muted,
       raceTime: state.raceTime,
       speed: Math.hypot(player.vA, player.vL), vA: player.vA, vL: player.vL,
@@ -3835,6 +4679,59 @@ const testApi = {
       badgeName: player.driverBadge?.mesh.name || null,
     };
   },
+  setContract(id, options = {}) {
+    return applyContract(id, { persist: options.persist ?? false, force: options.force ?? true });
+  },
+  contracts() { return contractSnapshot(); },
+  showcase() {
+    return {
+      enabled: showcaseMode,
+      autoStart: showcaseMode && query.get('autostart') === '1',
+    };
+  },
+  showdown() {
+    const ringColor = heliosDynamic.ring?.material?.emissive;
+    return {
+      active: showdown.active,
+      stage: showdown.stage,
+      elapsed: showdown.elapsed,
+      duration: 7.6,
+      winner: showdown.winner,
+      rank: showdown.rank,
+      margin: showdown.margin,
+      stationClaimed: showdown.stationClaimed,
+      beamActive: showdown.beamActive,
+      accent: `#${showdown.winnerColor.toString(16).padStart(6, '0')}`,
+      ringColor: ringColor ? `#${ringColor.getHexString()}` : null,
+      beamOpacity: heliosDynamic.beam?.material?.opacity ?? 0,
+      bannerOpacity: heliosDynamic.claimBanner?.material?.opacity ?? 0,
+      beaconIntensity: heliosDynamic.beacon?.intensity ?? 0,
+    };
+  },
+  tickPresentation(seconds = 1 / 60) {
+    const dt = Math.max(0, Number(seconds) || 0);
+    advanceShowdown(dt);
+    if (player.finished) state.finishDelay = Math.max(0, state.finishDelay) + dt;
+    const t = performance.now() / 1000;
+    updateHeliosPresentation(t);
+    updateCamera(Math.min(dt, .1));
+    renderFrame();
+    return this.showdown();
+  },
+  forceFinish(options = {}) { return forceFinishForTest(options); },
+  ghost() {
+    return {
+      available: Boolean(activeGhost),
+      active: ghostVisual.group.visible,
+      sampleCount: activeGhost?.samples?.length || 0,
+      bestTime: activeGhost?.bestTime ?? null,
+      currentDelta: currentGhostDelta,
+      difficulty: setupSelection.difficulty,
+      contract: setupSelection.contract,
+      runSeed: state.runSeed,
+    };
+  },
+  sectorDeltas() { return currentSectorDeltas(); },
   reset() { resetRace(); },
   armSlingshot() {
     player.boost = Math.max(player.boost, SLINGSHOT_COST + 2);

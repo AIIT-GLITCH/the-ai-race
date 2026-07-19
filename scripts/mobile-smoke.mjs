@@ -142,7 +142,9 @@ await page.waitForFunction(() => {
     Number(getComputedStyle(cue).opacity) > .8 &&
     control?.classList.contains('live') &&
     control?.dataset.kind === 'slingshotFire' &&
-    copy?.textContent === 'Slingshot deployed. OpenAI is coming through.' &&
+    /^Slingshot deployed\. OpenAI (?:attacks .+|is coming through)\.$/.test(
+      copy?.textContent || '',
+    ) &&
     Number(getComputedStyle(control).opacity) > .8;
 }, null, { timeout: 2_000 });
 // Let the legacy moment-stamp transition complete before proving that the
@@ -337,7 +339,9 @@ if (visibleNarratorPresentations.length !== 1 ||
     visibleNarratorPresentations[0]?.id !== 'raceControl' ||
     slingshot.narrator.kind !== 'slingshotFire' ||
     slingshot.narrator.copy.count !== 1 ||
-    slingshot.narrator.copy.text !== 'Slingshot deployed. OpenAI is coming through.') {
+    !/^Slingshot deployed\. OpenAI (?:attacks .+|is coming through)\.$/.test(
+      slingshot.narrator.copy.text,
+    )) {
   errors.push(`mobile narrator is not canonical: ${JSON.stringify({
     presentations: slingshot.narratorPresentations,
     narrator: slingshot.narrator,
