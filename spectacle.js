@@ -2,7 +2,7 @@
 //
 // This module deliberately spends the GPU budget on instancing and shaders:
 // tens of thousands of visible details remain a small number of draw calls.
-// Software renderers and coarse-pointer devices get a materially lighter path.
+// Software renderers and genuinely weak devices get a materially lighter path.
 
 const PROFILES = {
   ULTRA: {
@@ -82,31 +82,132 @@ const PROFILES = {
   },
 };
 
+// Keep the HIGH profile identity so the rest of the renderer retains its
+// physical materials, baked hull maps, and detailed geometry. Mobile tuning
+// trims expensive fill-rate features instead of throwing away the art
+// direction merely because a screen is touch-capable.
+const MOBILE_HIGH = {
+  pixelRatio: 1.25,
+  maxPixels: 1_600_000,
+  post: true,
+  hdr: false,
+  msaa: 0,
+  bloomPasses: 1,
+  wideBloom: false,
+  shadows: false,
+  shadowMap: 0,
+  stars: 5000,
+  motes: 1800,
+  modules: 140,
+  portals: 28,
+  trusses: 96,
+  edgeLights: 360,
+  solarPanels: 128,
+  drones: 48,
+  speedLines: 120,
+  orbitalCenters: 8,
+  volumetricBeams: 6,
+  dynamicEmitters: 2,
+  refractiveCores: true,
+};
+
+const MOBILE_FLAGSHIP = {
+  ...MOBILE_HIGH,
+  pixelRatio: 1.5,
+  maxPixels: 1_900_000,
+  stars: 6500,
+  motes: 2400,
+  modules: 160,
+  portals: 30,
+  trusses: 108,
+  edgeLights: 410,
+  solarPanels: 148,
+  drones: 60,
+  speedLines: 138,
+  orbitalCenters: 9,
+  volumetricBeams: 8,
+};
+
+function finiteCapability(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
 export function selectRenderProfile(renderer) {
   let gpu = '';
   let floatColor = false;
   let maxSamples = 0;
+  let maxTextureSize = finiteCapability(renderer.capabilities?.maxTextureSize);
+  let maxTextureUnits = finiteCapability(renderer.capabilities?.maxTextures);
+  const webgl2 = Boolean(renderer.capabilities?.isWebGL2);
   try {
     const gl = renderer.getContext();
     const debug = gl.getExtension('WEBGL_debug_renderer_info');
     gpu = debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) || '') : '';
-    floatColor = Boolean(renderer.capabilities.isWebGL2 && gl.getExtension('EXT_color_buffer_float'));
-    maxSamples = renderer.capabilities.isWebGL2 ? Number(gl.getParameter(gl.MAX_SAMPLES) || 0) : 0;
+    floatColor = Boolean(webgl2 && gl.getExtension('EXT_color_buffer_float'));
+    maxSamples = webgl2 ? Number(gl.getParameter(gl.MAX_SAMPLES) || 0) : 0;
+    maxTextureSize ??= finiteCapability(
+      gl.MAX_TEXTURE_SIZE === undefined ? null : gl.getParameter(gl.MAX_TEXTURE_SIZE),
+    );
+    maxTextureUnits ??= finiteCapability(
+      gl.MAX_TEXTURE_IMAGE_UNITS === undefined ? null : gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS),
+    );
   } catch {
     gpu = '';
   }
   const software = /swiftshader|llvmpipe|software|mesa offscreen/i.test(gpu);
+  const desktopClassGpu =
+    /\b(?:rtx|quadro|nvidia\s+a\d{4}|radeon\s+rx|apple\s+m[1-9])\b/i.test(gpu);
+  const flagshipMobileGpu =
+    /adreno(?:\s*\(tm\))?\s*(?:7[3-9]\d|8\d\d)|xclipse\s*(?:9[4-9]\d)|mali(?:-|\s)*g7[1-9]\d/i.test(gpu);
+  const lowClassGpu =
+    /adreno(?:\s*\(tm\))?\s*(?:[3-5]\d\d|6[0-1]\d)|mali(?:-|\s)*g(?:3\d|5[0-2])|powervr\s+(?:ge8|rogue)/i.test(gpu);
   const coarse = matchMedia('(pointer: coarse)').matches;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const memory = Number(navigator.deviceMemory || 8);
-  const cores = Number(navigator.hardwareConcurrency || 8);
+  const memory = finiteCapability(navigator.deviceMemory);
+  const cores = finiteCapability(navigator.hardwareConcurrency);
   const forced = new URLSearchParams(location.search).get('quality')?.toUpperCase();
   let name;
-  if (forced && PROFILES[forced]) name = forced;
-  else if (software || coarse || memory <= 3 || cores <= 3) name = 'BALANCED';
-  else if (memory >= 8 && cores >= 8) name = 'ULTRA';
-  else name = 'HIGH';
-  const base = PROFILES[name];
+  let selectionReason;
+  let mobileTuned = false;
+  if (forced && PROFILES[forced]) {
+    name = forced;
+    selectionReason = 'quality override';
+  } else if (
+    software ||
+    !webgl2 ||
+    lowClassGpu ||
+    (memory !== null && memory <= 3) ||
+    (cores !== null && cores <= 3) ||
+    (maxTextureSize !== null && maxTextureSize < 4096)
+  ) {
+    name = 'BALANCED';
+    selectionReason = software
+      ? 'software renderer'
+      : (!webgl2 ? 'WebGL 1 renderer' : 'low capability hardware');
+  } else if (
+    desktopClassGpu &&
+    (memory === null || memory >= 8) &&
+    (cores === null || cores >= 8)
+  ) {
+    // A workstation with a touch display is still a workstation. Pointer
+    // precision must never demote otherwise identical hardware.
+    name = 'ULTRA';
+    selectionReason = 'desktop-class GPU';
+  } else if (coarse) {
+    name = 'HIGH';
+    mobileTuned = true;
+    selectionReason = flagshipMobileGpu ? 'flagship mobile GPU' : 'capable mobile hardware';
+  } else if ((memory === null || memory >= 8) && (cores === null || cores >= 8)) {
+    name = 'ULTRA';
+    selectionReason = 'high capability hardware';
+  } else {
+    name = 'HIGH';
+    selectionReason = 'capable hardware';
+  }
+  const base = mobileTuned
+    ? { ...PROFILES[name], ...(flagshipMobileGpu ? MOBILE_FLAGSHIP : MOBILE_HIGH) }
+    : PROFILES[name];
   return Object.freeze({
     ...base,
     hdr: base.hdr && floatColor,
@@ -114,6 +215,19 @@ export function selectRenderProfile(renderer) {
     gpu: gpu || 'WebGL renderer',
     software,
     reducedMotion,
+    coarse,
+    mobileTuned,
+    mobileTier: mobileTuned ? (flagshipMobileGpu ? 'FLAGSHIP' : 'CAPABLE') : null,
+    selectionReason,
+    capabilities: Object.freeze({
+      webgl2,
+      memory,
+      cores,
+      maxSamples,
+      maxTextureSize,
+      maxTextureUnits,
+      floatColor,
+    }),
   });
 }
 

@@ -1255,6 +1255,7 @@ export class RaceControlDirector {
 
   _showCaption(item) {
     if (!this.captionEl) return;
+    this.captionEl.setAttribute?.('aria-hidden', 'false');
     if (this.captionCopy) this.captionCopy.textContent = item.text;
     if (this.captionSignal) this.captionSignal.textContent =
       item.kind === 'finish' ? 'HELIOS PRIORITY' : 'ORBITAL RACE CONTROL';
@@ -1275,6 +1276,7 @@ export class RaceControlDirector {
     if (this.captionTimer) this.clearTimer(this.captionTimer);
     this.captionTimer = null;
     this.captionEl.classList?.remove('live');
+    this.captionEl.setAttribute?.('aria-hidden', 'true');
     if (immediate && this.captionCopy) this.captionCopy.textContent = '';
   }
 

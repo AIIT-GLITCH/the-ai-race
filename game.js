@@ -2188,7 +2188,9 @@ function resetRace() {
   hud.msg.textContent = '';
   hud.msg.classList.remove('warn', 'draft', 'camera');
   if (hud.launchCue) {
-    hud.launchCue.innerHTML = '<b>HOLD THRUST</b> // STEER CLEAR // <b>SHIFT TO BURST</b>';
+    hud.launchCue.innerHTML = coarsePointer
+      ? '<b>HOLD THRUST</b> // STEER CLEAR // <b>TAP BURST</b>'
+      : '<b>HOLD THRUST</b> // STEER CLEAR // <b>SHIFT TO BURST</b>';
     hud.launchCue.classList.remove('battle', 'ready', 'active');
     hud.launchCue.classList.add('live');
   }
@@ -2262,6 +2264,7 @@ function onKey(e, down) {
   }
 }
 const touch = { left: false, right: false, gas: false, brk: false, boost: false, drift: false };
+const coarsePointer = matchMedia('(pointer: coarse)').matches;
 for (const [id, prop] of [
   ['tl', 'left'], ['tr', 'right'], ['tg', 'gas'], ['tb', 'brk'],
   ['tboost', 'boost'], ['tdrift', 'drift'],
@@ -3007,6 +3010,7 @@ const hud = {
   resultCores: document.getElementById('resultCores'),
   resultSlingshots: document.getElementById('resultSlingshots'),
   resultsStinger: document.getElementById('resultsStinger'),
+  boostControlLabel: document.getElementById('burstControlLabel'),
   raceControl: document.getElementById('raceControl'),
   launchCue: document.getElementById('launchCue'),
   momentStamp: document.getElementById('momentStamp'),
@@ -3014,6 +3018,7 @@ const hud = {
   difficultyHud: document.getElementById('difficultyHud'),
   pilotSpeedLabel: document.getElementById('pilotSpeedLabel'),
   setupStatus: document.getElementById('setupStatus'),
+  touchBoost: document.getElementById('tboost'),
   start: document.getElementById('startBtn'),
 };
 let narratorDecodeContext = null;
@@ -3424,15 +3429,40 @@ function updateHUD(dt) {
   for (const sector of SECTORS) if (missionProgress >= sector.f) activeSector = sector;
   hud.sectorName.textContent = activeSector.name;
   hud.sectorIndex.textContent = activeSector.code;
+  if (hud.touchBoost) {
+    hud.touchBoost.textContent = 'BURST';
+    hud.touchBoost.setAttribute('aria-label', 'inference burst');
+  }
+  if (hud.boostControlLabel) {
+    hud.boostControlLabel.textContent = coarsePointer
+      ? 'INFERENCE BURST · TAP'
+      : 'INFERENCE BURST · SHIFT';
+  }
   if (state.phase === 'race') {
     const wakeThreat = nearestWakeThreat();
     hud.launchCue.classList.remove('live', 'battle', 'ready', 'active');
     if (player.slingshotT > 0) {
       hud.launchCue.textContent = `SLINGSHOT // ${player.slingshotT.toFixed(1)}S`;
       hud.launchCue.classList.add('live', 'active');
+      if (hud.touchBoost) {
+        hud.touchBoost.textContent = 'SURGE';
+        hud.touchBoost.setAttribute('aria-label', 'slingshot surge active');
+      }
+      if (hud.boostControlLabel) hud.boostControlLabel.textContent = 'SLINGSHOT SURGE';
     } else if (player.slingshotReady) {
-      hud.launchCue.textContent = 'WAKE LOCKED // SHIFT TO SLINGSHOT';
+      hud.launchCue.textContent = coarsePointer
+        ? 'WAKE LOCKED // TAP BURST // SLINGSHOT'
+        : 'WAKE LOCKED // SHIFT TO SLINGSHOT';
       hud.launchCue.classList.add('live', 'ready');
+      if (hud.touchBoost) {
+        hud.touchBoost.textContent = 'SLINGSHOT';
+        hud.touchBoost.setAttribute('aria-label', 'deploy slingshot');
+      }
+      if (hud.boostControlLabel) {
+        hud.boostControlLabel.textContent = coarsePointer
+          ? 'SLINGSHOT · TAP BURST'
+          : 'SLINGSHOT · SHIFT';
+      }
     } else if (player.drafting) {
       const target = player.draftTarget?.spec?.name || 'TARGET';
       hud.launchCue.textContent = `WAKE LINK // ${target} // ${Math.round(player.draftCharge * 100)}%`;
@@ -3596,23 +3626,21 @@ function syncMeshes(t) {
 let last = performance.now(), acc = 0, testMode = false, testInput = null;
 let perfElapsed = 0, perfFrames = 0, perfGoodWindows = 0;
 function monitorRenderPerformance(dt) {
-  if (testMode || document.hidden || dt <= 0 || dt >= .1) return;
-  perfElapsed += dt;
+  if (testMode || document.hidden || dt <= 0) return;
+  // Count real stalls instead of discarding them at the simulation's 100 ms
+  // safety clamp. Bound only pathological background-resume gaps.
+  perfElapsed += Math.min(dt, .5);
   perfFrames++;
   if (perfElapsed < 4) return;
   const fps = perfFrames / perfElapsed;
   if (fps < 43 && adaptiveRenderScale > .62) {
     adaptiveRenderScale = Math.max(.62, adaptiveRenderScale - .1);
     perfGoodWindows = 0;
-    renderPixelRatio = Math.max(.5, profilePixelRatio() * adaptiveRenderScale);
-    renderer.setPixelRatio(renderPixelRatio);
     resize();
   } else if (fps > 57 && adaptiveRenderScale < 1) {
     perfGoodWindows++;
     if (perfGoodWindows >= 3) {
       adaptiveRenderScale = Math.min(1, adaptiveRenderScale + .05);
-      renderPixelRatio = Math.max(.5, profilePixelRatio() * adaptiveRenderScale);
-      renderer.setPixelRatio(renderPixelRatio);
       resize();
       perfGoodWindows = 0;
     }
@@ -3624,7 +3652,8 @@ function monitorRenderPerformance(dt) {
 }
 function frame(now) {
   requestAnimationFrame(frame);
-  let dt = Math.min((now - last) / 1000, 0.1);
+  const frameDt = Math.max(0, (now - last) / 1000);
+  let dt = Math.min(frameDt, 0.1);
   let resultsReady = false;
   last = now;
   const t = now / 1000;
@@ -3703,7 +3732,7 @@ function frame(now) {
   if (running || testMode) updateHUD(dt);
   post.dynamics(t, Math.hypot(player.vA, player.vL), player.boosting, player.hitWall, moments);
   renderFrame();
-  monitorRenderPerformance(dt);
+  monitorRenderPerformance(frameDt);
 }
 
 function resize() {
@@ -3833,6 +3862,11 @@ const testApi = {
       profile: renderProfile.name,
       gpu: renderProfile.gpu,
       software: renderProfile.software,
+      coarse: renderProfile.coarse,
+      mobileTuned: renderProfile.mobileTuned,
+      mobileTier: renderProfile.mobileTier,
+      selectionReason: renderProfile.selectionReason,
+      capabilities: renderProfile.capabilities,
       post: renderProfile.post,
       hdr: renderProfile.hdr,
       msaa: renderProfile.msaa,
