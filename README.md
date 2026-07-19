@@ -176,3 +176,8 @@ voice. The exact lines and bake script are included.
 
 Three.js is vendored under `vendor/three.module.js` and used under the MIT
 license. See `THIRD_PARTY.md`.
+
+## License
+
+The AI Race source is released under the [MIT License](LICENSE). Copyright
+2026 AIIT-THRESHOLD LLC.
