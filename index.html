@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#05060a">
 <meta name="description" content="The AI Race: twelve frontier labs. One orbital compute array. A massive anti-gravity sprint to space.">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
@@ -34,13 +34,18 @@
   body:not(.race-active) #missionBar,
   body:not(.race-active) #raceBox,
   body:not(.race-active) #msg,
+  body:not(.race-active) #launchCue,
   body:not(.race-active) #leaderboard,
   body:not(.race-active) #telemetry,
   body:not(.race-active) #minimap,
-  body:not(.race-active) #muteBtn,
   body:not(.race-active) #controlsHint,
   body:not(.race-active) #touch {
     visibility: hidden;
+  }
+  body:not(.race-active):not(.results-active) #muteBtn { visibility: hidden; }
+  body.results-active #muteBtn {
+    z-index: 42;
+    visibility: visible;
   }
 
   /* race HUD */
@@ -133,6 +138,37 @@
     white-space: nowrap;
   }
   #msg.warn { color: #ff8065; text-shadow: 0 0 34px rgba(255, 65, 38, .9); }
+  #msg.draft {
+    top: 17%;
+    padding: 8px 15px 7px;
+    color: var(--cyan);
+    background: rgba(4, 11, 17, .74);
+    border: 1px solid rgba(108, 236, 255, .34);
+    font-size: clamp(14px, 1.5vw, 22px);
+    letter-spacing: .22em;
+    text-shadow: 0 0 22px rgba(108, 236, 255, .62);
+    backdrop-filter: blur(10px);
+  }
+  #msg.camera {
+    top: 17%;
+    font-size: clamp(14px, 1.5vw, 22px);
+    letter-spacing: .2em;
+  }
+  #launchCue {
+    left: 50%;
+    top: 15%;
+    transform: translateX(-50%);
+    opacity: 0;
+    color: var(--dim);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    transition: opacity .16s ease;
+    white-space: nowrap;
+  }
+  #launchCue.live { opacity: 1; }
+  #launchCue b { color: var(--acid); }
 
   #raceControl {
     left: 50%;
@@ -244,6 +280,11 @@
   .tower-row .rank { opacity: .62; }
   .tower-row .swatch { width: 4px; height: 12px; background: var(--lab); box-shadow: 0 0 8px var(--lab); }
   .tower-row .gap { opacity: .58; font-variant-numeric: tabular-nums; }
+  .tower-break {
+    height: 8px;
+    background:
+      linear-gradient(90deg, rgba(255,255,255,.08) 0 2px, transparent 2px 6px) center / 18px 1px no-repeat;
+  }
 
   #telemetry {
     right: 22px;
@@ -452,16 +493,103 @@
     text-transform: uppercase;
   }
   .briefStat b { font-size: 13px; letter-spacing: .04em; }
-  #rosterLine {
+  .setupPanel {
     width: min(100%, 500px);
-    margin-top: 2vh;
+    margin-top: 2.1vh;
+    padding: 10px;
+    background: rgba(4, 8, 13, .82);
+    border: 1px solid rgba(255,255,255,.12);
+    box-shadow: inset 0 0 28px rgba(108,236,255,.025);
+    backdrop-filter: blur(12px);
+  }
+  .setupHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 2px 8px;
     color: var(--dim);
+    font-size: 7px;
+    font-weight: 950;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+  }
+  .setupHead output { color: var(--acid); letter-spacing: .13em; }
+  .setupGrid {
+    display: grid;
+    grid-template-columns: 1.18fr .82fr;
+    gap: 8px;
+  }
+  .setupGroup {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+  .setupGroup legend {
+    margin: 0 0 5px 2px;
+    color: var(--ink);
     font-size: 8px;
-    font-weight: 800;
-    line-height: 1.8;
+    font-weight: 900;
     letter-spacing: .14em;
     text-transform: uppercase;
   }
+  .setupChoices {
+    display: grid;
+    gap: 4px;
+  }
+  #difficultySelect .setupChoices { grid-template-columns: repeat(3, 1fr); }
+  #driverSelect .setupChoices { grid-template-columns: repeat(2, 1fr); }
+  .setupOption {
+    min-width: 0;
+    min-height: 45px;
+    padding: 7px 6px;
+    pointer-events: auto;
+    cursor: pointer;
+    color: var(--dim);
+    background: rgba(255,255,255,.035);
+    border: 1px solid rgba(255,255,255,.1);
+    font-size: 8px;
+    font-weight: 950;
+    letter-spacing: .1em;
+    line-height: 1.15;
+    text-align: left;
+    text-transform: uppercase;
+    transition: color .14s ease, border-color .14s ease, background .14s ease, transform .14s ease;
+  }
+  .setupOption small {
+    display: block;
+    margin-top: 4px;
+    color: rgba(244,247,245,.46);
+    font-size: 6px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    line-height: 1.2;
+  }
+  .setupOption:hover { transform: translateY(-1px); border-color: rgba(108,236,255,.34); }
+  .setupOption[aria-pressed="true"] {
+    color: #05060a;
+    background: var(--acid);
+    border-color: var(--acid);
+    box-shadow: 0 0 20px rgba(223,255,71,.13);
+  }
+  .setupOption[aria-pressed="true"] small { color: rgba(5,6,10,.66); }
+  #driverSelect .setupOption[data-driver="sam"][aria-pressed="true"] {
+    color: var(--ink);
+    background: linear-gradient(125deg, rgba(16,48,54,.96), rgba(27,83,80,.96));
+    border-color: var(--cyan);
+    box-shadow: 0 0 22px rgba(108,236,255,.12);
+  }
+  #driverSelect .setupOption[data-driver="sam"][aria-pressed="true"] small { color: rgba(244,247,245,.66); }
+  .setupNote {
+    display: none;
+    margin: 7px 2px 0;
+    color: rgba(244,247,245,.48);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .075em;
+    line-height: 1.4;
+    text-transform: uppercase;
+  }
+  body[data-driver="sam"] .setupNote { display: block; }
   .actionRow {
     display: flex;
     align-items: center;
@@ -471,6 +599,7 @@
   .btn {
     position: relative;
     min-width: 220px;
+    min-height: 46px;
     overflow: hidden;
     pointer-events: auto;
     cursor: pointer;
@@ -546,10 +675,54 @@
     letter-spacing: .24em;
     text-transform: uppercase;
   }
-  table { width: 100%; margin: 0 auto 24px; border-collapse: collapse; font-size: 12px; }
+  .resultsTableWrap { margin: 0 auto 24px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
   td, th { padding: 8px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); }
   th { color: var(--dim); font-size: 8px; letter-spacing: .2em; text-transform: uppercase; }
   tr.you td { color: #05060a; background: var(--acid); font-weight: 900; }
+  .resultsMeta {
+    margin: -14px auto 20px;
+    color: var(--cyan);
+    font-size: 8px;
+    font-weight: 950;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+  }
+  .resultsHero {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    margin: 0 auto 22px;
+    background: rgba(255,255,255,.12);
+  }
+  .resultStat {
+    min-width: 0;
+    padding: 11px 12px;
+    background: rgba(4,8,13,.8);
+    text-align: left;
+  }
+  .resultStat small {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--dim);
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  .resultStat b {
+    display: block;
+    overflow: hidden;
+    font-size: 12px;
+    letter-spacing: .035em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .resultsActions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
 
   /* touch controls */
   #touch { position: fixed; inset: 0; z-index: 20; display: none; pointer-events: none; }
@@ -610,7 +783,29 @@
     .eyebrow { margin-bottom: 2vh; }
     .heroTitle { font-size: clamp(62px, 18vw, 112px); }
     .missionLine { margin-top: 2vh; font-size: 14px; }
-    .briefGrid, #rosterLine { display: none; }
+    .briefGrid { display: none; }
+    .setupPanel { width: 100%; margin-top: 1.5vh; padding: 8px; }
+    .setupHead { margin-bottom: 6px; }
+    .setupHead output { display: none; }
+    .setupGrid { grid-template-columns: 1fr; gap: 7px; }
+    .setupGroup legend { margin-bottom: 4px; font-size: 7px; }
+    .setupOption { min-height: 44px; padding: 6px; text-align: center; }
+    .setupOption small { display: none; }
+    #results .panel { padding: 24px 14px 72px; }
+    #results .panel h2 { font-size: clamp(38px, 11vw, 52px); }
+    .resultsSub { margin-bottom: 20px; letter-spacing: .16em; }
+    .resultsMeta { margin: -10px auto 14px; letter-spacing: .14em; }
+    .resultsHero { grid-template-columns: repeat(2, 1fr); }
+    .resultsTableWrap {
+      max-height: 210px;
+      margin-bottom: 14px;
+      overflow: auto;
+      border-top: 1px solid rgba(255,255,255,.09);
+      border-bottom: 1px solid rgba(255,255,255,.09);
+      overscroll-behavior: contain;
+    }
+    td, th { padding: 7px 8px; }
+    .resultsActions .btn { padding: 13px 8px; font-size: 9px; letter-spacing: .14em; }
     .actionRow { width: 100%; margin-top: 2vh; }
     .btn { min-width: 0; flex: 1; }
     .inputNote { display: none; }
@@ -620,7 +815,14 @@
     #raceBox { left: auto; right: 10px; top: 10px; gap: 9px; transform: none; padding: 7px 8px; }
     #raceBox span:first-child, #raceBox span:last-child { display: none; }
     #raceBox b { font-size: 12px; }
-    #leaderboard, #controlsHint, #minimap, #muteBtn { display: none; }
+    #leaderboard, #controlsHint, #minimap { display: none; }
+    #muteBtn {
+      right: 10px;
+      top: 62px;
+      min-height: 40px;
+      padding: 9px 10px;
+      font-size: 7px;
+    }
     #telemetry {
       right: 10px;
       bottom: calc(3.5vh + min(39vw, 170px));
@@ -633,6 +835,8 @@
     #speedUnit b { font-size: 10px; }
     .barLabel { font-size: 7px; }
     #msg { top: 20%; font-size: 36px; }
+    #msg.draft, #msg.camera { top: 16%; font-size: 12px; }
+    #launchCue { top: 14%; font-size: 7px; }
     #raceControl {
       bottom: calc(3.5vh + min(65vw, 260px) + 18px);
       width: calc(100vw - 24px);
@@ -643,11 +847,14 @@
   }
 
   @media (max-height: 680px) and (min-width: 700px) {
+    #menu .panel { padding: 3vh 4vw; }
     .heroTitle { font-size: 84px; }
     .eyebrow { margin-bottom: 2vh; }
     .missionLine { margin-top: 2.2vh; font-size: 14px; }
-    .briefGrid { margin-top: 1.6vh; }
-    #rosterLine { margin-top: 1.2vh; }
+    .briefGrid { display: none; }
+    .setupPanel { margin-top: 1.3vh; padding: 7px; }
+    .setupGrid { grid-template-columns: 1.18fr .82fr; }
+    .setupOption { min-height: 44px; }
     .actionRow { margin-top: 1.8vh; }
   }
 </style>
@@ -656,7 +863,7 @@
 <canvas id="game"></canvas>
 
 <section class="hud" id="missionBar" aria-label="mission progress">
-  <div id="missionEyebrow">Orbital transfer // sector <span id="sectorIndex">01</span></div>
+  <div id="missionEyebrow"><span id="driverHud">OpenAI Pilot</span> // <span id="difficultyHud">Pro</span> // sector <span id="sectorIndex">01</span></div>
   <div id="sectorName">Helios Launch Array</div>
   <div id="progressRail"><i id="progressFill"></i></div>
   <div id="progressMeta"><span>Earthside</span><span id="distanceLeft">2.7 KM TO COMPUTE</span><span>Orbit</span></div>
@@ -670,6 +877,7 @@
 </div>
 
 <div class="hud" id="msg"></div>
+<div class="hud" id="launchCue"><b>Hold thrust</b> // steer clear // <b>Shift to burst</b></div>
 <section class="hud" id="raceControl" role="status" aria-live="polite" aria-atomic="true">
   <div class="race-control-shell">
     <i class="race-control-pulse" aria-hidden="true"></i>
@@ -684,7 +892,7 @@
 <section class="hud" id="telemetry" aria-label="vehicle telemetry">
   <div id="speedLine">
     <div id="speed">0</div>
-    <div id="speedUnit"><b>OPENAI // 01</b>TOKENS / SEC</div>
+    <div id="speedUnit"><b id="pilotSpeedLabel">ORBIT-01</b>KM / H</div>
   </div>
   <div class="barLabel"><span>Thermal Shield</span><span id="shieldPct">100%</span></div>
   <div class="bar" id="shieldBar"><i id="shieldFill"></i></div>
@@ -701,7 +909,7 @@
 <main class="overlay show" id="menu">
   <div id="keyArt"></div>
   <section class="panel" aria-labelledby="menuTitle">
-    <div class="eyebrow">OpenAI Build Week // Cinematic GPU protocol</div>
+    <div class="eyebrow">HELIOS Orbital Grand Prix // Build Week Exhibition</div>
     <h1 class="heroTitle" id="menuTitle">The AI<span>Race</span></h1>
     <p class="missionLine">
       Twelve frontier labs. One unclaimed orbital data center.
@@ -712,10 +920,27 @@
       <div class="briefStat"><small>Field</small><b>12 AI LABS</b></div>
       <div class="briefStat"><small>Objective</small><b>CLAIM HELIOS</b></div>
     </div>
-    <div id="rosterLine">
-      OpenAI // Anthropic // Google DeepMind // xAI // Meta // DeepSeek //
-      Mistral // Qwen // Moonshot // Cohere // MiniMax // Microsoft AI
-    </div>
+    <section class="setupPanel" aria-label="mission setup">
+      <div class="setupHead"><span>Mission setup</span><output id="setupStatus">PRO // OPENAI PILOT</output></div>
+      <div class="setupGrid">
+        <fieldset class="setupGroup" id="difficultySelect">
+          <legend>Race protocol</legend>
+          <div class="setupChoices" role="group" aria-label="difficulty">
+            <button class="setupOption" type="button" data-difficulty="rookie" aria-pressed="false">Rookie<small>More shield · calmer rivals</small></button>
+            <button class="setupOption" type="button" data-difficulty="pro" aria-pressed="true">Pro<small>Balanced race craft</small></button>
+            <button class="setupOption" type="button" data-difficulty="apex" aria-pressed="false">Apex<small>Faster field · hard contact</small></button>
+          </div>
+        </fieldset>
+        <fieldset class="setupGroup" id="driverSelect">
+          <legend>Driver identity</legend>
+          <div class="setupChoices" role="group" aria-label="driver identity">
+            <button class="setupOption" type="button" data-driver="pilot" aria-pressed="true">Pilot 01<small>OpenAI race division</small></button>
+            <button class="setupOption" type="button" data-driver="sam" aria-pressed="false">Sam Altman<small>Unofficial tribute role</small></button>
+          </div>
+        </fieldset>
+      </div>
+      <p class="setupNote">Unofficial text-only tribute // no likeness, endorsement, or cloned voice</p>
+    </section>
     <div class="actionRow">
       <button class="btn" id="startBtn">Initiate launch</button>
       <div class="inputNote"><b>WASD</b> drive<br><b>Shift</b> inference burst<br><b>Gamepad + touch</b> ready</div>
@@ -727,11 +952,23 @@
   <div class="panel">
     <h2 id="resTitle">Compute Claimed</h2>
     <div class="resultsSub" id="resultsSub">Helios orbital array // final classification</div>
-    <table>
-      <thead><tr><th>#</th><th>Lab</th><th>Data Cores</th><th>Arrival</th></tr></thead>
-      <tbody id="resBody"></tbody>
-    </table>
-    <button class="btn" id="againBtn">Run it back</button>
+    <div class="resultsMeta" id="resultsMeta">OPENAI PILOT // PRO PROTOCOL</div>
+    <div class="resultsHero" aria-label="player result summary">
+      <div class="resultStat"><small>Driver</small><b id="resultDriver">OPENAI PILOT</b></div>
+      <div class="resultStat"><small>Protocol</small><b id="resultDifficulty">PRO</b></div>
+      <div class="resultStat"><small>Mission time</small><b id="resultTime">0:00.00</b></div>
+      <div class="resultStat"><small>Data cores</small><b id="resultCores">0 / 8</b></div>
+    </div>
+    <div class="resultsTableWrap" tabindex="0" aria-label="full race classification">
+      <table>
+        <thead><tr><th>#</th><th>Lab</th><th>Arrival</th></tr></thead>
+        <tbody id="resBody"></tbody>
+      </table>
+    </div>
+    <div class="resultsActions">
+      <button class="btn" id="againBtn">Run it back</button>
+      <button class="btn ghost" id="setupBtn">Change setup</button>
+    </div>
   </div>
 </section>
 
@@ -745,12 +982,12 @@
 </section>
 
 <div id="touch" aria-label="touch controls">
-  <div class="tbtn" id="tl" aria-label="steer left">◀</div>
-  <div class="tbtn" id="tr" aria-label="steer right">▶</div>
-  <div class="tbtn" id="tb" aria-label="brake">▼</div>
-  <div class="tbtn" id="tg" aria-label="thrust">▲</div>
-  <div class="tbtn" id="tdrift" aria-label="drift">DRIFT</div>
-  <div class="tbtn" id="tboost" aria-label="inference burst">BURST</div>
+  <button class="tbtn" id="tl" type="button" aria-label="steer left">◀</button>
+  <button class="tbtn" id="tr" type="button" aria-label="steer right">▶</button>
+  <button class="tbtn" id="tb" type="button" aria-label="brake">▼</button>
+  <button class="tbtn" id="tg" type="button" aria-label="thrust">▲</button>
+  <button class="tbtn" id="tdrift" type="button" aria-label="drift">DRIFT</button>
+  <button class="tbtn" id="tboost" type="button" aria-label="inference burst">BURST</button>
 </div>
 
 <script type="module" src="game.js"></script>

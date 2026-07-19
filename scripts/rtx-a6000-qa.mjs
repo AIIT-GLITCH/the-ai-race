@@ -57,6 +57,14 @@ const shots = [
   ['final-approach', .94],
 ];
 const screenshots = [];
+const LAUNCH_DRAW_CALL_BUDGET = 280;
+const COURSE_DRAW_CALL_BUDGET = 220;
+await page.evaluate(() => {
+  window.__aiRace.renderOnce();
+  window.__aiRace.renderOnce();
+});
+await page.waitForTimeout(80);
+const launchGraphics = await page.evaluate(() => window.__aiRace.graphics());
 for (const [label, progress] of shots) {
   await page.evaluate(({ progress }) => {
     const race = window.__aiRace;
@@ -76,13 +84,16 @@ await browser.close();
 if (hardware && (!/NVIDIA|RTX A6000/i.test(graphics.gpu) || graphics.software)) {
   errors.push(`hardware WebGL unavailable: ${graphics.gpu}`);
 }
-if (graphics.calls <= 0 || graphics.calls > 220) {
-  errors.push(`scene draw calls out of budget: ${graphics.calls}`);
+if (launchGraphics.calls <= 0 || launchGraphics.calls > LAUNCH_DRAW_CALL_BUDGET) {
+  errors.push(`launch draw calls out of budget: ${launchGraphics.calls}`);
+}
+if (graphics.calls <= 0 || graphics.calls > COURSE_DRAW_CALL_BUDGET) {
+  errors.push(`course draw calls out of budget: ${graphics.calls}`);
 }
 if (graphics.width * graphics.height > 3_700_000 * 1.02) {
   errors.push(`ULTRA pixel budget exceeded: ${graphics.width}x${graphics.height}`);
 }
 
-const result = { graphics, screenshots, errors };
+const result = { launchGraphics, graphics, screenshots, errors };
 console.log(JSON.stringify(result, null, 2));
 if (errors.length) process.exit(1);

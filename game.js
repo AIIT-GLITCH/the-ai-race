@@ -12,7 +12,7 @@
 import * as THREE from './vendor/three.module.js';
 import { buildTrack, nearestSample, validateTrack, HALF_WIDTH, WALL_OFFSET } from './track.js';
 import { createSpectacle, selectRenderProfile } from './spectacle.js';
-import { createRaceControl } from './race-control.js';
+import { createRaceControl, DEFAULT_RACE_CONTROL_CLIPS } from './race-control.js';
 
 // ---------- deterministic PRNG for scenery ----------
 function mulberry32(seed) {
@@ -119,6 +119,128 @@ const DATA_CORES = [
 const RECHARGE = { f: 0.952, len: 46 };
 const TUNNEL = { f0: 0.79, f1: 0.90 };
 
+// ---------- player-facing race setup ----------
+const DIFFICULTY_PRESETS = Object.freeze({
+  rookie: Object.freeze({
+    id: 'rookie',
+    label: 'ROOKIE',
+    pace: .955,
+    corner: .94,
+    burstOffset: 10,
+    boostDuration: .9,
+    bandMin: -.055,
+    bandMax: .01,
+    passLook: 22,
+    passOffset: 1.6,
+    edgeAssist: .55,
+    playerGrip: 1.12,
+    wallDamage: .65,
+    collisionDamage: .75,
+    passiveRegen: 2,
+    rechargeRate: 50,
+    boostDrain: .92,
+    padCharge: 1.08,
+  }),
+  pro: Object.freeze({
+    id: 'pro',
+    label: 'PRO',
+    pace: 1,
+    corner: 1,
+    burstOffset: 0,
+    boostDuration: 1,
+    bandMin: -.025,
+    bandMax: .03,
+    passLook: 30,
+    passOffset: 2.1,
+    edgeAssist: .18,
+    playerGrip: 1,
+    wallDamage: 1,
+    collisionDamage: 1,
+    passiveRegen: 1.5,
+    rechargeRate: 45,
+    boostDrain: 1,
+    padCharge: 1,
+  }),
+  apex: Object.freeze({
+    id: 'apex',
+    label: 'APEX',
+    pace: 1.04,
+    corner: 1.07,
+    burstOffset: -12,
+    boostDuration: 1.15,
+    bandMin: -.012,
+    bandMax: .018,
+    passLook: 38,
+    passOffset: 2.7,
+    edgeAssist: 0,
+    playerGrip: 1,
+    wallDamage: 1.15,
+    collisionDamage: 1.1,
+    passiveRegen: 1,
+    rechargeRate: 40,
+    boostDrain: 1.06,
+    padCharge: .96,
+  }),
+});
+
+const DRIVER_PROFILES = Object.freeze({
+  pilot: Object.freeze({
+    id: 'pilot',
+    name: 'OPENAI PILOT',
+    hudName: 'OPENAI PILOT',
+    callsign: 'ORBIT-01',
+    monogram: '01',
+    accent: 0xdfff47,
+  }),
+  sam: Object.freeze({
+    id: 'sam',
+    name: 'SAM ALTMAN',
+    hudName: 'SAM ALTMAN',
+    callsign: 'SAM // 01',
+    monogram: 'SA',
+    accent: 0x6cecff,
+    tribute: true,
+  }),
+});
+
+const STORAGE_KEYS = Object.freeze({
+  difficulty: 'ai-race:difficulty:v1',
+  driver: 'ai-race:driver:v1',
+  records: 'ai-race:records:v1',
+});
+
+function storedChoice(key, choices, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return choices[value] ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function queryChoice(name, choices) {
+  const value = new URLSearchParams(location.search).get(name);
+  return choices[value] ? value : null;
+}
+
+const setupSelection = {
+  difficulty: queryChoice('difficulty', DIFFICULTY_PRESETS) ||
+    storedChoice(STORAGE_KEYS.difficulty, DIFFICULTY_PRESETS, 'pro'),
+  driver: queryChoice('driver', DRIVER_PROFILES) ||
+    storedChoice(STORAGE_KEYS.driver, DRIVER_PROFILES, 'pilot'),
+};
+const activeDifficulty = () => DIFFICULTY_PRESETS[setupSelection.difficulty];
+const activeDriver = () => DRIVER_PROFILES[setupSelection.driver];
+function loadRecords() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.records) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+const raceRecords = loadRecords();
+
 // ---------- roster ----------
 const ROSTER = [
   { name: 'ANTHROPIC', color: 0xd97745, vmax: 83.8, latG: 20.2, look: 1.18, risk: 0.91, burstAt: 65, lane: -4.1 },
@@ -141,7 +263,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPrefer
 const renderProfile = selectRenderProfile(renderer);
 document.body.dataset.renderProfile = renderProfile.name.toLowerCase();
 const renderEyebrow = document.querySelector('#menu .eyebrow');
-if (renderEyebrow) renderEyebrow.textContent = `OPENAI BUILD WEEK // ${renderProfile.name} GPU PROTOCOL`;
+if (renderEyebrow) renderEyebrow.textContent = 'HELIOS ORBITAL GRAND PRIX // BUILD WEEK EXHIBITION';
 function profilePixelRatio(width = innerWidth, height = innerHeight) {
   const budget = Math.sqrt(renderProfile.maxPixels / Math.max(1, width * height));
   const textureCap = renderer.capabilities.maxTextureSize / Math.max(1, width, height);
@@ -1274,6 +1396,56 @@ const sharedShipGlass = renderProfile.name === 'BALANCED'
       envMapIntensity: 2.35,
     });
 
+function paintDriverBadge(badge, profile) {
+  if (!badge) return;
+  const { canvas, context, texture } = badge;
+  const accent = `#${profile.accent.toString(16).padStart(6, '0')}`;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = 'rgba(3, 8, 13, .94)';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = accent;
+  context.lineWidth = 8;
+  context.strokeRect(6, 6, canvas.width - 12, canvas.height - 12);
+  context.fillStyle = accent;
+  context.font = '900 80px Arial Narrow, Arial, sans-serif';
+  context.textAlign = 'left';
+  context.textBaseline = 'middle';
+  context.fillText(profile.monogram, 24, 86);
+  context.fillStyle = '#f4f7f5';
+  context.font = '900 30px Arial Narrow, Arial, sans-serif';
+  context.fillText(profile.callsign, 158, 66);
+  context.fillStyle = 'rgba(244,247,245,.62)';
+  context.font = '800 18px Arial Narrow, Arial, sans-serif';
+  context.fillText('OPENAI RACE DIVISION', 158, 105);
+  texture.needsUpdate = true;
+}
+
+function makeDriverBadge(profile) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 144;
+  const context = canvas.getContext('2d');
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.72, .48), material);
+  mesh.name = 'PLAYER_DRIVER_BADGE';
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(0, .792, -.58);
+  const badge = { canvas, context, texture, mesh };
+  paintDriverBadge(badge, profile);
+  return badge;
+}
+
 function makeShip(spec) {
   const g = new THREE.Group();
   const lean = new THREE.Group();
@@ -1342,8 +1514,26 @@ function makeShip(spec) {
     return { group: g, lean, engines, plate: spr, shieldMat: null };
   }
   if (!spec.player) return { group: g, lean, engines, plate: null, shieldMat: null };
+  const driverBadge = makeDriverBadge(activeDriver());
+  lean.add(driverBadge.mesh);
+  const driverAccentMat = new THREE.MeshBasicMaterial({
+    color: activeDriver().accent,
+    transparent: true,
+    opacity: .78,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const driverHalo = new THREE.Mesh(
+    new THREE.TorusGeometry(.55, .035, 8, 28),
+    driverAccentMat,
+  );
+  driverHalo.name = 'PLAYER_DRIVER_HALO';
+  driverHalo.rotation.x = Math.PI / 2;
+  driverHalo.position.set(0, .8, .28);
+  lean.add(driverHalo);
   const shieldMat = new THREE.MeshBasicMaterial({
-    color: 0xdfff47,
+    color: activeDriver().accent,
     wireframe: true,
     transparent: true,
     opacity: .055,
@@ -1355,7 +1545,15 @@ function makeShip(spec) {
   shield.scale.set(1.82, .72, 3.28);
   shield.position.y = .28;
   lean.add(shield);
-  return { group: g, lean, engines, plate: null, shieldMat };
+  return {
+    group: g,
+    lean,
+    engines,
+    plate: null,
+    shieldMat,
+    driverBadge,
+    driverAccentMat,
+  };
 }
 
 // engine trail ribbons
@@ -1471,6 +1669,18 @@ function stepShip(c, raceTime, freeze) {
     const yawAuth = (2.6 - Math.min(spd, 78) * 0.012) * (1 + c.airbrake * 0.75);
     c.psi += -c.steer * yawAuth * DT;
     c.psi = THREE.MathUtils.clamp(c.psi, -1.15, 1.15);
+    if (c.spec.player && !c.airbrake && activeDifficulty().edgeAssist > 0) {
+      const engage = THREE.MathUtils.clamp(
+        (Math.abs(c.lat) - EDGE * .66) / (EDGE * .26),
+        0,
+        1,
+      );
+      if (engage > 0) {
+        const desiredPsi = -Math.sign(c.lat) * (.16 + .24 * engage);
+        const maxCorrection = activeDifficulty().edgeAssist * engage * DT;
+        c.psi += THREE.MathUtils.clamp(desiredPsi - c.psi, -maxCorrection, maxCorrection);
+      }
+    }
 
     // decompose into ship frame
     const cosP = Math.cos(c.psi), sinP = Math.sin(c.psi);
@@ -1487,7 +1697,8 @@ function stepShip(c, raceTime, freeze) {
     vF -= (0.3 + 0.0019 * vF * Math.abs(vF) * aero) * Math.sign(vF) * DT * (c.throttle > 0 ? 0.3 : 0.85);
     if (c.drafting) c.boost = Math.min(100, c.boost + 2.8 * DT);
     // lateral grip (airbrake drops it = drift)
-    const grip = c.airbrake > 0 ? GRIP_DRIFT : GRIP;
+    const grip = (c.airbrake > 0 ? GRIP_DRIFT : GRIP) *
+      (c.spec.player && !c.airbrake ? activeDifficulty().playerGrip : 1);
     vR *= Math.exp(-grip * DT);
 
     // recompose to track frame
@@ -1507,14 +1718,18 @@ function stepShip(c, raceTime, freeze) {
 
     // boost bookkeeping
     c.boosting = c.boostIn > 0 && c.boost > 0.5 && !c.finished;
-    if (c.boosting) c.boost = Math.max(0, c.boost - BOOST_DRAIN * DT);
+    if (c.boosting) {
+      const drain = c.spec.player ? activeDifficulty().boostDrain : 1;
+      c.boost = Math.max(0, c.boost - BOOST_DRAIN * drain * DT);
+    }
     // pads
     c.padGlow = Math.max(0, c.padGlow - DT * 2);
     for (const pad of PADS) {
       const ps = pad.f * L;
       const d = deltaS(ps, c.s);
       if (d > 0 && d < pad.len && (c._padCd ?? 0) <= 0) {
-        c.boost = Math.min(100, c.boost + PAD_CHARGE);
+        const charge = c.spec.player ? activeDifficulty().padCharge : 1;
+        c.boost = Math.min(100, c.boost + PAD_CHARGE * charge);
         const vmaxPad = c.spec.vmax * BOOST_VMAX_MUL;
         const cur = Math.hypot(c.vA, c.vL);
         if (cur < vmaxPad) c.vA += PAD_KICK * Math.sign(c.vA || 1) * Math.min(1, (vmaxPad - cur) / PAD_KICK);
@@ -1543,7 +1758,10 @@ function stepShip(c, raceTime, freeze) {
     const rs = RECHARGE.f * L;
     const rd = deltaS(rs, c.s);
     const onRecharge = rd > 0 && rd < RECHARGE.len;
-    c.shield = Math.min(SHIELD_MAX, c.shield + (onRecharge ? 45 : 1.5) * DT);
+    const rechargeRate = c.spec.player
+      ? (onRecharge ? activeDifficulty().rechargeRate : activeDifficulty().passiveRegen)
+      : (onRecharge ? 45 : 1.5);
+    c.shield = Math.min(SHIELD_MAX, c.shield + rechargeRate * DT);
     if (c.shield > 22) c.limp = false;
 
     // body attitude (visual): lean INTO the turn like an AG craft
@@ -1564,11 +1782,15 @@ function stepShip(c, raceTime, freeze) {
     if (vOut > 0) {
       c.vL = -c.vL * 0.12; // small bounce-in
       if (!freeze) {
-        c.shield = Math.max(0, c.shield - vOut * 2.6);
+        const damage = c.spec.player ? activeDifficulty().wallDamage : 1;
+        c.shield = Math.max(0, c.shield - vOut * 2.6 * damage);
         if (c.shield <= 0) c.limp = true;
       }
     }
-    if (!freeze) c.shield = Math.max(0, c.shield - 7 * DT); // scrape
+    if (!freeze) {
+      const damage = c.spec.player ? activeDifficulty().wallDamage : 1;
+      c.shield = Math.max(0, c.shield - 7 * DT * damage); // scrape
+    }
     if (c.shield <= 0) c.limp = true;
     // deflect the nose along the track while touching: ships GLANCE off walls
     c.psi += THREE.MathUtils.clamp(-c.psi, -1, 1) * 3.0 * DT;
@@ -1634,7 +1856,10 @@ function collideShips(ships) {
         // only real impacts cost shield — pack rubbing at 120Hz must not shred it
         if (vn < -3) {
           const dmg = Math.min(6, -vn * 0.8);
-          a.shield = Math.max(0, a.shield - dmg); b.shield = Math.max(0, b.shield - dmg);
+          const damageA = a.spec.player ? activeDifficulty().collisionDamage : 1;
+          const damageB = b.spec.player ? activeDifficulty().collisionDamage : 1;
+          a.shield = Math.max(0, a.shield - dmg * damageA);
+          b.shield = Math.max(0, b.shield - dmg * damageB);
           if (a.spec.player) a.impactSerial++;
           if (b.spec.player) b.impactSerial++;
         }
@@ -1646,19 +1871,39 @@ function collideShips(ships) {
 // ---------- AI ----------
 function aiDrive(c, playerProgress) {
   if (c.stuck > 2.5) { respawn(c); return; }
+  const tune = c.spec.player ? DIFFICULTY_PRESETS.pro : activeDifficulty();
   const spd = Math.hypot(c.vA, c.vL);
   // aim point: cut toward the inside of the upcoming corner
   const look = THREE.MathUtils.clamp(9 + spd * 0.5 * c.spec.look, 12, 46);
   const kA = signedCurveAhead(c.s, look + 12);
   const apex = THREE.MathUtils.clamp(Math.sign(kA) * Math.min(Math.abs(kA) * 700, 4.2), -4.4, 4.4);
+  let passNudge = 0;
+  let nearestTraffic = Infinity;
+  for (const other of ships) {
+    if (other === c || other.finished) continue;
+    const ahead = deltaS(c.s, other.s);
+    if (ahead <= 3 || ahead >= tune.passLook || ahead >= nearestTraffic) continue;
+    if (Math.abs(c.lat - other.lat) >= 3.4) continue;
+    nearestTraffic = ahead;
+    const side = c.lat <= other.lat ? -1 : 1;
+    passNudge = side * tune.passOffset * (1 - ahead / tune.passLook);
+  }
   // k>0 = left turn, apex on the left = -lat... but sign(kA)*(-1)? Left turn inside is -lat:
-  const targetLat = THREE.MathUtils.clamp(-apex + c.aiBias, -EDGE + 1.1, EDGE - 1.1);
+  const targetLat = THREE.MathUtils.clamp(
+    -apex + c.aiBias + passNudge,
+    -EDGE + 1.1,
+    EDGE - 1.1,
+  );
   const psiDes = Math.atan2(targetLat - c.lat, look);
   c.steerIn = THREE.MathUtils.clamp((c.psi - psiDes) * 3.0, -1, 1);
 
   // corner-speed preview (banking raises the effective limit — the AI knows)
-  const band = THREE.MathUtils.clamp((playerProgress - c.progress) / 450, -0.05, 0.06);
-  let vT = c.spec.vmax * (1 + band);
+  const band = THREE.MathUtils.clamp(
+    (playerProgress - c.progress) / 450,
+    tune.bandMin,
+    tune.bandMax,
+  );
+  let vT = c.spec.vmax * tune.pace * (1 + band);
   const iNow = Math.round(wrapS(c.s) / STEP);
   const nAhead = Math.ceil(THREE.MathUtils.clamp(14 + spd * 1.6, 30, 110) / STEP);
   for (let j = 0; j <= nAhead; j += 3) {
@@ -1666,7 +1911,9 @@ function aiDrive(c, playerProgress) {
     const kk = Math.abs(track.curvature[ii]);
     if (kk < 1e-4) continue;
     const assist = Math.max(0, -Math.sign(track.curvature[ii]) * Math.sin(track.bank[ii])) * GRAV;
-    const vCorner = Math.sqrt((c.spec.latG * 0.86 * (c.spec.risk ?? 1) + assist) / kk);
+    const vCorner = Math.sqrt(
+      (c.spec.latG * 0.86 * (c.spec.risk ?? 1) * tune.corner + assist) / kk,
+    );
     const distJ = j * STEP;
     const allowed = Math.sqrt(vCorner * vCorner + 2 * 20 * Math.max(distJ - 8, 0));
     vT = Math.min(vT, allowed);
@@ -1679,8 +1926,13 @@ function aiDrive(c, playerProgress) {
   // boost on straights when it has charge (and slightly more eagerly when behind)
   c.aiBoostT = Math.max(0, c.aiBoostT - DT);
   const straight = curveAhead(c.s, 70) < 0.005;
-  const burstAt = Math.max(24, (c.spec.burstAt ?? 55) - (band > 0 ? 15 : 0));
-  if (c.aiBoostT <= 0 && straight && c.boost > burstAt) c.aiBoostT = 0.8 + (c.spec.risk ?? 1) * 0.45;
+  const burstAt = Math.max(
+    20,
+    (c.spec.burstAt ?? 55) + tune.burstOffset - (band > 0 ? 10 : 0),
+  );
+  if (c.aiBoostT <= 0 && straight && c.boost > burstAt) {
+    c.aiBoostT = (0.8 + (c.spec.risk ?? 1) * 0.45) * tune.boostDuration;
+  }
   c.boostIn = c.aiBoostT > 0 ? 1 : 0;
 }
 
@@ -1693,6 +1945,8 @@ const state = {
   phase: 'menu', raceTime: 0, countdown: 0, goTimer: 0,
   muted: false, cameraMode: 0, cameraLabelT: 0, autopilot: false,
   finishDelay: -1, countdownBeat: null,
+  difficulty: setupSelection.difficulty,
+  driver: setupSelection.driver,
 };
 let raceControl = null;
 
@@ -1701,6 +1955,8 @@ const ships = ROSTER.map((spec, i) => {
   const built = makeShip(spec);
   st.mesh = built.group; st.lean = built.lean; st.engines = built.engines; st.plate = built.plate;
   st.shieldMat = built.shieldMat;
+  st.driverBadge = built.driverBadge || null;
+  st.driverAccentMat = built.driverAccentMat || null;
   st.shadowMeshes = [];
   built.group.traverse(object => {
     const material = object.material;
@@ -1740,6 +1996,8 @@ function resetRace() {
       engines: c.engines,
       plate: c.plate,
       shieldMat: c.shieldMat,
+      driverBadge: c.driverBadge,
+      driverAccentMat: c.driverAccentMat,
       shadowMeshes: c.shadowMeshes,
       trail: c.trail,
     });
@@ -1755,6 +2013,8 @@ function resetRace() {
     if (core.mesh) core.mesh.visible = true;
   }
   hud.msg.textContent = '';
+  hud.msg.classList.remove('warn', 'draft', 'camera');
+  hud.launchCue?.classList.add('live');
   hud.menu.classList.remove('show'); hud.results.classList.remove('show'); hud.pause.classList.remove('show');
   document.body.classList.remove('results-active');
   document.body.classList.add('race-active');
@@ -1775,6 +2035,8 @@ function raceControlSnapshot() {
     progress: THREE.MathUtils.clamp((player.lapProgress ?? player.progress) / L, 0, 1),
     player: {
       name: player.spec.name,
+      driverId: activeDriver().id,
+      driverName: activeDriver().name,
       rank: order.indexOf(player) + 1,
       packets: player.packets,
       packetTotal: DATA_CORES.length,
@@ -1803,7 +2065,7 @@ function onKey(e, down) {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(code)) e.preventDefault();
   keys[code] = down;
   if (!down) return;
-  if (code === 'Enter' && (state.phase === 'menu' || state.phase === 'results')) resetRace();
+  if (code === 'Enter' && (state.phase === 'menu' || state.phase === 'results')) launchRace();
   if (code === 'KeyR' && state.phase !== 'menu') resetRace();
   if (code === 'KeyB' && state.phase === 'race') respawn(player);
   if (code === 'KeyM') setMuted(!state.muted);
@@ -2441,17 +2703,192 @@ const hud = {
   sectorName: document.getElementById('sectorName'), sectorIndex: document.getElementById('sectorIndex'),
   progressFill: document.getElementById('progressFill'), distanceLeft: document.getElementById('distanceLeft'),
   resultsSub: document.getElementById('resultsSub'),
+  resultsMeta: document.getElementById('resultsMeta'),
+  resultDriver: document.getElementById('resultDriver'),
+  resultDifficulty: document.getElementById('resultDifficulty'),
+  resultTime: document.getElementById('resultTime'),
+  resultCores: document.getElementById('resultCores'),
   raceControl: document.getElementById('raceControl'),
+  launchCue: document.getElementById('launchCue'),
+  driverHud: document.getElementById('driverHud'),
+  difficultyHud: document.getElementById('difficultyHud'),
+  pilotSpeedLabel: document.getElementById('pilotSpeedLabel'),
+  setupStatus: document.getElementById('setupStatus'),
+  start: document.getElementById('startBtn'),
 };
+let narratorDecodeContext = null;
+function getNarratorDecodeContext() {
+  if (narratorDecodeContext) return narratorDecodeContext;
+  const OfflineContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OfflineContext) return null;
+  try {
+    narratorDecodeContext = new OfflineContext(1, 1, 44_100);
+  } catch {
+    narratorDecodeContext = null;
+  }
+  return narratorDecodeContext;
+}
 raceControl = createRaceControl({
   captionEl: hud.raceControl,
   sectors: SECTORS,
   muted: state.muted,
   getAudioContext: () => ac,
+  getDecodeContext: getNarratorDecodeContext,
   onDuck: setNarratorDuck,
 });
-document.getElementById('startBtn').addEventListener('click', () => { ensureAudio(); resetRace(); });
+
+function persistSetupChoice(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Persistence is enhancement only; private browsing must remain playable.
+  }
+}
+
+function refreshSetupPresentation() {
+  const difficulty = activeDifficulty();
+  const driver = activeDriver();
+  state.difficulty = difficulty.id;
+  state.driver = driver.id;
+  document.body.dataset.difficulty = difficulty.id;
+  document.body.dataset.driver = driver.id;
+  document.querySelectorAll('[data-difficulty]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.difficulty === difficulty.id));
+  });
+  document.querySelectorAll('[data-driver]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.driver === driver.id));
+  });
+  hud.setupStatus.textContent = `${difficulty.label} // ${driver.name}`;
+  hud.driverHud.textContent = driver.hudName;
+  hud.difficultyHud.textContent = difficulty.label;
+  hud.pilotSpeedLabel.textContent = driver.callsign;
+  hud.start.textContent = driver.id === 'sam' ? 'Launch as Sam' : 'Initiate launch';
+  paintDriverBadge(player.driverBadge, driver);
+  player.driverAccentMat?.color.set(driver.accent);
+  player.shieldMat?.color.set(driver.accent);
+}
+
+function applyDifficulty(id, options = {}) {
+  if (!DIFFICULTY_PRESETS[id]) return false;
+  if (!options.force && state.phase !== 'menu' && state.phase !== 'results') return false;
+  setupSelection.difficulty = id;
+  if (options.persist !== false) persistSetupChoice(STORAGE_KEYS.difficulty, id);
+  refreshSetupPresentation();
+  return true;
+}
+
+function applyDriver(id, options = {}) {
+  if (!DRIVER_PROFILES[id]) return false;
+  if (!options.force && state.phase !== 'menu' && state.phase !== 'results') return false;
+  setupSelection.driver = id;
+  if (options.persist !== false) persistSetupChoice(STORAGE_KEYS.driver, id);
+  refreshSetupPresentation();
+  return true;
+}
+
+for (const button of document.querySelectorAll('[data-difficulty]')) {
+  button.addEventListener('click', () => applyDifficulty(button.dataset.difficulty));
+}
+for (const button of document.querySelectorAll('[data-driver]')) {
+  button.addEventListener('click', () => applyDriver(button.dataset.driver));
+}
+for (const group of document.querySelectorAll('.setupChoices')) {
+  const buttons = [...group.querySelectorAll('.setupOption')];
+  buttons.forEach((button, index) => {
+    button.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      const next = buttons[(index + direction + buttons.length) % buttons.length];
+      next.focus();
+      next.click();
+    });
+  });
+}
+
+function showSetupMenu() {
+  state.phase = 'menu';
+  document.body.classList.remove('race-active', 'results-active');
+  hud.results.classList.remove('show');
+  hud.pause.classList.remove('show');
+  hud.menu.classList.add('show');
+  hud.launchCue.classList.remove('live');
+  raceControl.reset(raceControlSnapshot());
+  refreshSetupPresentation();
+}
+
+refreshSetupPresentation();
+const CRITICAL_NARRATOR_CLIPS = Object.freeze(['briefing', 'green']);
+const NARRATOR_WARM_PRIORITY = Object.freeze([
+  'rank.up',
+  'rank.down',
+  'draft',
+  'core',
+  'impact',
+  'sector.02',
+  'sector.03',
+  'leader.OPENAI',
+  'shield.low',
+  'core.8',
+  'sector.04',
+  'sector.05',
+  'sector.06',
+  'finish.win',
+  'finish.loss',
+  'shield.gone',
+]);
+const BACKGROUND_NARRATOR_CLIPS = Object.freeze(
+  [
+    ...NARRATOR_WARM_PRIORITY,
+    ...Object.keys(DEFAULT_RACE_CONTROL_CLIPS)
+      .filter(id =>
+        !CRITICAL_NARRATOR_CLIPS.includes(id) &&
+        !NARRATOR_WARM_PRIORITY.includes(id)),
+  ],
+);
+const narratorIdle = callback => {
+  if (globalThis.requestIdleCallback) {
+    return globalThis.requestIdleCallback(callback, { timeout: 1400 });
+  }
+  return setTimeout(callback, 280);
+};
+let narratorWarmGeneration = 0;
+function stageNarratorDecode(clipIds = BACKGROUND_NARRATOR_CLIPS) {
+  const generation = ++narratorWarmGeneration;
+  const batchSize = matchMedia('(pointer: coarse)').matches ? 2 : 4;
+  let cursor = 0;
+  const decodeNext = () => {
+    if (generation !== narratorWarmGeneration || cursor >= clipIds.length) return;
+    const batch = clipIds.slice(cursor, cursor + batchSize);
+    cursor += batch.length;
+    raceControl.prewarm({ clipIds: batch, retryFailed: true, resume: false })
+      .finally(() => {
+        if (generation === narratorWarmGeneration && cursor < clipIds.length) {
+          narratorIdle(decodeNext);
+        }
+      });
+  };
+  narratorIdle(decodeNext);
+}
+raceControl.prefetch({ clipIds: CRITICAL_NARRATOR_CLIPS })
+  .then(() => raceControl.predecode({
+    clipIds: CRITICAL_NARRATOR_CLIPS,
+    retryFailed: true,
+  }))
+  .then(() => {
+    narratorIdle(() => raceControl.prefetch().catch(() => {}));
+  })
+  .catch(() => {});
+function launchRace() {
+  ensureAudio();
+  raceControl.prewarm({ clipIds: CRITICAL_NARRATOR_CLIPS, retryFailed: true })
+    .then(() => stageNarratorDecode())
+    .catch(() => {});
+  resetRace();
+}
+hud.start.addEventListener('click', launchRace);
 document.getElementById('againBtn').addEventListener('click', () => resetRace());
+document.getElementById('setupBtn').addEventListener('click', showSetupMenu);
 document.getElementById('resumeBtn').addEventListener('click', () => { state.phase = 'race'; hud.pause.classList.remove('show'); });
 document.getElementById('pauseRestart').addEventListener('click', () => { hud.pause.classList.remove('show'); resetRace(); });
 hud.mute.addEventListener('click', () => setMuted(!state.muted));
@@ -2511,20 +2948,35 @@ function drawMinimap() {
 function updateTower() {
   const order = ranking();
   const lead = order[0];
-  hud.tower.innerHTML =
-    '<div class="tower-title"><span>Live lab order</span><span>Gap</span></div>' +
-    order.map((c, i) => {
+  const playerIndex = order.indexOf(player);
+  const selected = new Set([0, 1, 2]);
+  for (const index of [playerIndex - 1, playerIndex, playerIndex + 1]) {
+    if (index >= 0 && index < order.length) selected.add(index);
+  }
+  for (let index = 0; selected.size < Math.min(6, order.length); index++) {
+    if (index < order.length) selected.add(index);
+  }
+  const visible = [...selected].sort((a, b) => a - b);
+  let previousIndex = -1;
+  const rows = [];
+  for (const i of visible) {
+    if (previousIndex >= 0 && i - previousIndex > 1) rows.push('<div class="tower-break" aria-hidden="true"></div>');
+    previousIndex = i;
+    const c = order[i];
     const col = '#' + c.spec.color.toString(16).padStart(6, '0');
     let gap;
     if (i === 0) gap = c.finished ? fmt(c.finishTime) : 'LEADER';
     else if (c.finished && lead.finished) gap = '+' + (c.finishTime - lead.finishTime).toFixed(1);
     else gap = '+' + ((lead.progress - c.progress) / Math.max(Math.hypot(lead.vA, lead.vL), 10)).toFixed(1);
-    return `<div class="tower-row${c.spec.player ? ' you' : ''}" style="--lab:${col}">` +
+    rows.push(`<div class="tower-row${c.spec.player ? ' you' : ''}" style="--lab:${col}">` +
       `<span class="rank">${String(i + 1).padStart(2, '0')}</span>` +
       '<span class="swatch"></span>' +
       `<span>${c.spec.name}</span>` +
-      `<span class="gap">${gap}</span></div>`;
-  }).join('');
+      `<span class="gap">${gap}</span></div>`);
+  }
+  hud.tower.innerHTML =
+    '<div class="tower-title"><span>Live lab order</span><span>Gap</span></div>' +
+    rows.join('');
 }
 
 let hudClock = 0;
@@ -2557,15 +3009,24 @@ function updateHUD(dt) {
   hud.sectorName.textContent = activeSector.name;
   hud.sectorIndex.textContent = activeSector.code;
   if (state.phase === 'race') {
-    if (state.goTimer > 0) { state.goTimer -= 0.1; hud.msg.textContent = 'GO!'; hud.msg.classList.remove('warn'); }
+    if (state.goTimer > 0) {
+      state.goTimer -= 0.1;
+      hud.msg.textContent = 'GO!';
+      hud.msg.classList.remove('warn', 'draft', 'camera');
+    }
     else {
       state.cameraLabelT = Math.max(0, state.cameraLabelT - .1);
-      hud.msg.textContent = player.wrongWay > 1.2
+      const wrongWay = player.wrongWay > 1.2;
+      const cameraCall = !wrongWay && state.cameraLabelT > 0;
+      const draftCall = !wrongWay && !cameraCall && player.drafting;
+      hud.msg.textContent = wrongWay
         ? 'WRONG WAY'
-        : (state.cameraLabelT > 0
+        : (cameraCall
           ? `CAM // ${CAMERA_NAMES[state.cameraMode]}`
-          : (player.drafting ? (innerWidth < 700 ? 'DRAFT' : 'DRAFT LINK') : ''));
-      hud.msg.classList.toggle('warn', player.wrongWay > 1.2);
+          : (draftCall ? (innerWidth < 700 ? 'DRAFT' : 'DRAFT LINK') : ''));
+      hud.msg.classList.toggle('warn', wrongWay);
+      hud.msg.classList.toggle('camera', cameraCall);
+      hud.msg.classList.toggle('draft', draftCall);
     }
   }
   drawMinimap();
@@ -2575,17 +3036,45 @@ function showResults() {
   state.phase = 'results';
   document.body.classList.remove('race-active');
   document.body.classList.add('results-active');
+  hud.launchCue.classList.remove('live');
+  const driver = activeDriver();
+  const difficulty = activeDifficulty();
+  const previous = raceRecords[difficulty.id] || null;
+  const newPersonalBest = player.finished &&
+    (!Number.isFinite(previous?.bestTime) || player.finishTime < previous.bestTime);
+  if (player.finished) {
+    raceRecords[difficulty.id] = {
+      bestTime: newPersonalBest ? player.finishTime : previous?.bestTime,
+      bestRank: Math.min(previous?.bestRank ?? ships.length, ranking().indexOf(player) + 1),
+      bestCores: Math.max(previous?.bestCores ?? 0, player.packets),
+    };
+    try {
+      localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(raceRecords));
+    } catch {
+      // A result should never fail because local persistence is unavailable.
+    }
+  }
   const rows = ranking().map((c, i) => {
     const you = c.spec.player ? ' class="you"' : '';
-    return `<tr${you}><td>${i + 1}</td><td>${c.spec.name}</td><td>${c.spec.player ? `${c.packets}/${DATA_CORES.length}` : '—'}</td><td>${c.finished ? fmt(c.finishTime) : 'DNF'}</td></tr>`;
+    const entrant = c.spec.player ? `${c.spec.name} / ${driver.name}` : c.spec.name;
+    return `<tr${you}><td>${i + 1}</td><td>${entrant}</td><td>${c.finished ? fmt(c.finishTime) : 'DNF'}</td></tr>`;
   }).join('');
   hud.resBody.innerHTML = rows;
   const rank = ranking().indexOf(player) + 1;
   document.getElementById('resTitle').textContent =
     rank === 1 ? 'COMPUTE CLAIMED' : `P${rank} // HELIOS ARRIVAL`;
   hud.resultsSub.textContent = rank === 1
-    ? 'OPENAI reached the HELIOS orbital array first'
-    : `OPENAI finished P${rank} of ${ships.length} // run it back`;
+    ? `${driver.name} delivered OPENAI to the HELIOS array first`
+    : `${driver.name} classified OPENAI P${rank} of ${ships.length}`;
+  const record = raceRecords[difficulty.id];
+  const tributeLabel = driver.tribute ? ' // UNOFFICIAL TRIBUTE' : '';
+  hud.resultsMeta.textContent = newPersonalBest
+    ? `${difficulty.label} PROTOCOL${tributeLabel} // NEW PERSONAL BEST`
+    : `${difficulty.label} PROTOCOL${tributeLabel} // PB ${record?.bestTime ? fmt(record.bestTime) : '—'}`;
+  hud.resultDriver.textContent = driver.name;
+  hud.resultDifficulty.textContent = difficulty.label;
+  hud.resultTime.textContent = player.finished ? fmt(player.finishTime) : 'DNF';
+  hud.resultCores.textContent = `${player.packets} / ${DATA_CORES.length}`;
   hud.results.classList.add('show');
 }
 
@@ -2690,6 +3179,7 @@ function frame(now) {
   last = now;
   const t = now / 1000;
   if (state.phase === 'countdown') {
+    hud.launchCue.classList.add('live');
     state.countdown -= dt;
     const n = Math.ceil(state.countdown - 0.2);
     if (n > 0 && n !== state.countdownBeat) {
@@ -2702,6 +3192,8 @@ function frame(now) {
     hud.msg.classList.remove('warn');
     hud.msg.textContent = n > 0 ? String(n) : 'GO!';
     if (state.countdown <= 0.2 && state.phase === 'countdown') { state.phase = 'race'; state.goTimer = 1.2; }
+  } else {
+    hud.launchCue.classList.remove('live');
   }
   const running = state.phase === 'race' || state.phase === 'countdown';
   if (running && !testMode) {
@@ -2808,6 +3300,10 @@ const testApi = {
   state() {
     return {
       phase: state.phase, s: player.s, lat: player.lat, psi: player.psi,
+      difficulty: setupSelection.difficulty,
+      driver: setupSelection.driver,
+      muted: state.muted,
+      raceTime: state.raceTime,
       speed: Math.hypot(player.vA, player.vL), vA: player.vA, vL: player.vL,
       shield: player.shield, boost: player.boost, boosting: player.boosting, limp: player.limp,
       packets: player.packets, drafting: player.drafting, cameraMode: state.cameraMode,
@@ -2820,6 +3316,21 @@ const testApi = {
       })),
     };
   },
+  setDifficulty(id, options = {}) {
+    return applyDifficulty(id, { persist: options.persist ?? false, force: options.force ?? true });
+  },
+  difficulty() { return { ...activeDifficulty() }; },
+  setDriver(id, options = {}) {
+    return applyDriver(id, { persist: options.persist ?? false, force: options.force ?? true });
+  },
+  driver() {
+    return {
+      ...activeDriver(),
+      badgeVisible: Boolean(player.driverBadge?.mesh.visible),
+      badgeName: player.driverBadge?.mesh.name || null,
+    };
+  },
+  reset() { resetRace(); },
   autopilot(on) { state.autopilot = !!on; },
   tickFx(dt) { updateParticles(dt); for (const c of ships) updateTrail(c, dt); },
   audio() {

@@ -194,12 +194,15 @@ export class RaceControlDirector {
     this.sectors = [...(options.sectors || DEFAULT_SECTORS)].sort((a, b) => a.f - b.f);
     this.onDuck = options.onDuck || (() => {});
     this.getAudioContext = options.getAudioContext || (() => null);
+    this.getDecodeContext = options.getDecodeContext || this.getAudioContext;
     this.speech = options.speech ?? globalThis.speechSynthesis ?? null;
     this.Utterance = options.Utterance ?? globalThis.SpeechSynthesisUtterance ?? null;
     this.AudioCtor = options.AudioCtor ?? globalThis.Audio ?? null;
+    this.fetchFn = options.fetchFn ?? globalThis.fetch?.bind(globalThis) ?? null;
     this.transport = options.transport || null;
     this.setTimer = options.setTimer || defaultTimer;
     this.clearTimer = options.clearTimer || (timer => clearTimeout(timer));
+    this.wallNow = options.wallNow || (() => globalThis.performance?.now?.() ?? Date.now());
     this.minGap = options.minGap ?? 4.1;
     this.leaderStableFor = options.leaderStableFor ?? 1.25;
     this.rankStableFor = options.rankStableFor ?? 0.72;
@@ -218,6 +221,18 @@ export class RaceControlDirector {
     this.phase = 'menu';
     this.voice = null;
     this.voiceName = null;
+    this.rawClipCache = new Map();
+    this.decodedClipCache = new Map();
+    this.audioCacheStats = {
+      rawHits: 0,
+      decodedHits: 0,
+      fetches: 0,
+      decodes: 0,
+      failures: 0,
+      decodedStarts: 0,
+      lastDecodedStartLatencyMs: null,
+    };
+    this.currentRequestedAt = null;
     this._token = 0;
     this._resetDetection();
   }
@@ -619,6 +634,7 @@ export class RaceControlDirector {
 
   _play(item) {
     this.current = item;
+    this.currentRequestedAt = this.wallNow();
     this.lastSpokenAt = this.now;
     this.lastByKind.set(item.kind, this.now);
     this.history.push({
@@ -637,6 +653,7 @@ export class RaceControlDirector {
     const finish = () => {
       if (token !== this._token) return;
       this.current = null;
+      this.currentRequestedAt = null;
       this.currentCancel = null;
       this.onDuck(false);
       this._radioCue(false);
@@ -660,7 +677,7 @@ export class RaceControlDirector {
 
     const clip = this._resolveClip(item);
     const clipText = clip && typeof clip === 'object' ? clip.text : null;
-    if (clip && (!clipText || clipText === item.text) && this.AudioCtor) {
+    if (clip && (!clipText || clipText === item.text)) {
       this.currentCancel = this._playClip(clip, finish);
       return;
     }
@@ -684,13 +701,288 @@ export class RaceControlDirector {
     return null;
   }
 
+  _manifestDescriptors(clipIds = null) {
+    const ids = clipIds
+      ? [...new Set(Array.isArray(clipIds) ? clipIds : [clipIds])]
+      : Object.keys(this.clipManifest);
+    const bySource = new Map();
+    for (const id of ids) {
+      const entry = this.clipManifest[id];
+      if (!entry) continue;
+      const descriptor = typeof entry === 'string' ? { src: entry } : entry;
+      if (descriptor?.src && !bySource.has(descriptor.src)) {
+        bySource.set(descriptor.src, descriptor);
+      }
+    }
+    return [...bySource.values()];
+  }
+
+  _cacheSummary(requested, context = null) {
+    let prefetched = 0;
+    let decoded = 0;
+    let failed = 0;
+    for (const descriptor of requested) {
+      const raw = this.rawClipCache.get(descriptor.src);
+      const ready = this.decodedClipCache.get(descriptor.src);
+      if (raw?.status === 'ready') prefetched++;
+      if (ready?.status === 'ready') decoded++;
+      if (raw?.status === 'failed' || ready?.status === 'failed') failed++;
+    }
+    return {
+      requested: requested.length,
+      prefetched,
+      decoded,
+      failed,
+      contextState: context?.state || 'unavailable',
+    };
+  }
+
+  _fetchClip(src, retryFailed = false) {
+    const existing = this.rawClipCache.get(src);
+    if (existing && (!retryFailed || existing.status !== 'failed')) {
+      this.audioCacheStats.rawHits++;
+      return existing.promise;
+    }
+    if (!this.fetchFn) return Promise.reject(new Error('Fetch is unavailable'));
+
+    this.audioCacheStats.fetches++;
+    const record = { status: 'pending', promise: null, value: null, error: null };
+    record.promise = Promise.resolve()
+      .then(() => this.fetchFn(src))
+      .then(response => {
+        if (!response?.ok) throw new Error(`Narrator clip request failed (${response?.status || 'network'})`);
+        return response.arrayBuffer();
+      })
+      .then(bytes => {
+        if (!(bytes instanceof ArrayBuffer)) throw new Error('Narrator clip response was not an ArrayBuffer');
+        record.status = 'ready';
+        record.value = bytes;
+        return bytes;
+      })
+      .catch(error => {
+        record.status = 'failed';
+        record.error = error;
+        this.audioCacheStats.failures++;
+        throw error;
+      });
+    // Every stored promise owns a rejection handler so speculative page-load
+    // prefetching can never surface as an unhandled rejection.
+    record.promise.catch(() => {});
+    this.rawClipCache.set(src, record);
+    return record.promise;
+  }
+
+  _decodeAudioData(context, bytes) {
+    // Safari versions that predate the promise form still require callbacks.
+    return new Promise((resolve, reject) => {
+      let returned;
+      try {
+        returned = context.decodeAudioData(bytes, resolve, reject);
+      } catch (error) {
+        reject(error);
+        return;
+      }
+      returned?.then?.(resolve, reject);
+    });
+  }
+
+  _decodeClip(descriptor, context, retryFailed = false) {
+    const src = descriptor.src;
+    const existing = this.decodedClipCache.get(src);
+    if (existing && (!retryFailed || existing.status !== 'failed')) {
+      this.audioCacheStats.decodedHits++;
+      return existing.promise;
+    }
+    if (!context?.decodeAudioData) return Promise.reject(new Error('Web Audio decoding is unavailable'));
+
+    this.audioCacheStats.decodes++;
+    const record = { status: 'pending', promise: null, value: null, error: null };
+    record.promise = this._fetchClip(src, retryFailed)
+      // decodeAudioData is allowed to detach its input. Preserve the compressed
+      // cache so a later AudioContext can decode the same source without I/O.
+      .then(bytes => this._decodeAudioData(context, bytes.slice(0)))
+      .then(buffer => {
+        if (!buffer) throw new Error('Narrator clip decode returned no buffer');
+        record.status = 'ready';
+        record.value = buffer;
+        return buffer;
+      })
+      .catch(error => {
+        record.status = 'failed';
+        record.error = error;
+        this.audioCacheStats.failures++;
+        throw error;
+      });
+    record.promise.catch(() => {});
+    this.decodedClipCache.set(src, record);
+    return record.promise;
+  }
+
+  /**
+   * Fetch compressed narrator clips into memory. This is safe to call while
+   * the menu is idle, before an AudioContext exists or a user gesture occurs.
+   */
+  async prefetch(options = {}) {
+    const requested = this._manifestDescriptors(options.clipIds);
+    await Promise.allSettled(
+      requested.map(descriptor => this._fetchClip(descriptor.src, options.retryFailed)),
+    );
+    return this._cacheSummary(requested);
+  }
+
+  /**
+   * Decode clips without attempting playback or resuming an output context.
+   * A browser OfflineAudioContext can use this during menu idle time; decoded
+   * AudioBuffers remain valid when attached to the live playback context.
+   */
+  async predecode(options = {}) {
+    const requested = this._manifestDescriptors(options.clipIds);
+    const context = this.getDecodeContext();
+    if (!context?.decodeAudioData) {
+      await this.prefetch(options);
+      return this._cacheSummary(requested);
+    }
+    await Promise.allSettled(
+      requested.map(descriptor =>
+        this._decodeClip(descriptor, context, options.retryFailed)),
+    );
+    return this._cacheSummary(requested, context);
+  }
+
+  /**
+   * Resume Web Audio and decode narrator clips. Call this directly inside the
+   * start-button gesture after the game's AudioContext has been created. The
+   * resume call is intentionally made before the first await.
+   */
+  async prewarm(options = {}) {
+    const requested = this._manifestDescriptors(options.clipIds);
+    const context = this.getAudioContext();
+    if (!context) {
+      await this.prefetch(options);
+      return this._cacheSummary(requested);
+    }
+
+    const resume = options.resume === false || context.state !== 'suspended'
+      ? Promise.resolve()
+      : Promise.resolve(context.resume?.()).catch(() => {});
+    const decoded = requested.map(descriptor =>
+      this._decodeClip(descriptor, context, options.retryFailed));
+    await Promise.allSettled([resume, ...decoded]);
+    return this._cacheSummary(requested, context);
+  }
+
   _playClip(entry, finish) {
     const descriptor = typeof entry === 'string' ? { src: entry } : entry;
+    const context = this.getAudioContext();
+    if (context?.decodeAudioData && this.fetchFn) {
+      let cancelled = false;
+      let activeCancel = null;
+      this._decodeClip(descriptor, context).then(
+        buffer => {
+          if (cancelled) return;
+          try {
+            activeCancel = this._playDecodedClip(buffer, descriptor, finish, context);
+          } catch {
+            activeCancel = this._playMediaClip(descriptor, finish);
+          }
+        },
+        () => {
+          if (cancelled) return;
+          activeCancel = this._playMediaClip(descriptor, finish);
+        },
+      );
+      return () => {
+        cancelled = true;
+        activeCancel?.();
+      };
+    }
+    return this._playMediaClip(descriptor, finish);
+  }
+
+  _playDecodedClip(buffer, descriptor, finish, context) {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = descriptor.rate || 1;
+    const audioNodes = [source];
+    let fallback = null;
+    let settled = false;
+
+    try {
+      const highpass = context.createBiquadFilter();
+      const lowpass = context.createBiquadFilter();
+      const compressor = context.createDynamicsCompressor();
+      const gain = context.createGain();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 260;
+      highpass.Q.value = 0.75;
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = 4700;
+      lowpass.Q.value = 0.7;
+      compressor.threshold.value = -24;
+      compressor.knee.value = 10;
+      compressor.ratio.value = 5;
+      compressor.attack.value = 0.006;
+      compressor.release.value = 0.12;
+      gain.gain.value = clamp(descriptor.volume ?? 0.92, 0, 1);
+      source.connect(highpass);
+      highpass.connect(lowpass);
+      lowpass.connect(compressor);
+      compressor.connect(gain);
+      gain.connect(context.destination);
+      audioNodes.push(highpass, lowpass, compressor, gain);
+    } catch {
+      try { source.connect(context.destination); } catch { /* media fallback below */ }
+    }
+
+    const disconnect = () => {
+      for (const node of audioNodes) {
+        try { node.disconnect(); } catch { /* already disconnected */ }
+      }
+      audioNodes.length = 0;
+    };
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      source.onended = null;
+      if (fallback) this.clearTimer(fallback);
+      disconnect();
+      finish();
+    };
+    source.onended = done;
+    try {
+      source.start(0);
+      this.audioCacheStats.decodedStarts++;
+      if (Number.isFinite(this.currentRequestedAt)) {
+        this.audioCacheStats.lastDecodedStartLatencyMs =
+          Math.max(0, this.wallNow() - this.currentRequestedAt);
+      }
+    } catch {
+      disconnect();
+      return this._playMediaClip(descriptor, finish);
+    }
+
+    const durationMs = buffer.duration
+      ? (buffer.duration * 1000) / Math.max(0.01, descriptor.rate || 1)
+      : descriptor.durationMs || 0;
+    fallback = this.setTimer(done, Math.max(15_000, durationMs + 3_000));
+    return () => {
+      if (settled) return;
+      settled = true;
+      source.onended = null;
+      if (fallback) this.clearTimer(fallback);
+      try { source.stop(0); } catch { /* already stopped */ }
+      disconnect();
+    };
+  }
+
+  _playMediaClip(descriptor, finish) {
+    if (!this.AudioCtor) return this._speak(this.current?.text || '', finish);
     const audio = new this.AudioCtor(descriptor.src);
     audio.preload = 'auto';
     audio.volume = clamp(descriptor.volume ?? 0.92, 0, 1);
     audio.playbackRate = descriptor.rate || 1;
     let fallback = null;
+    let speechCancel = null;
     let settled = false;
     const audioNodes = [];
     const disconnectNodes = () => {
@@ -751,7 +1043,7 @@ export class RaceControlDirector {
       if (fallback) this.clearTimer(fallback);
       audio.pause?.();
       disconnectNodes();
-      this.currentCancel = this._speak(this.current?.text || '', finish);
+      speechCancel = this._speak(this.current?.text || '', finish);
     };
     audio.onended = done;
     audio.onerror = fallbackToSpeech;
@@ -767,6 +1059,7 @@ export class RaceControlDirector {
     );
     fallback = this.setTimer(done, watchdogMs);
     return () => {
+      speechCancel?.();
       settled = true;
       if (fallback) this.clearTimer(fallback);
       audio.pause?.();
@@ -907,6 +1200,7 @@ export class RaceControlDirector {
     }
     this.currentCancel = null;
     this.current = null;
+    this.currentRequestedAt = null;
     this.onDuck(false);
     if (hideCaption) this._hideCaption();
   }
@@ -934,6 +1228,13 @@ export class RaceControlDirector {
       history: this.history.map(item => ({ ...item })),
       leader: { ...this.leader },
       playerRank: { ...this.playerRank },
+      audioCache: {
+        prefetched: [...this.rawClipCache.values()].filter(entry => entry.status === 'ready').length,
+        decoded: [...this.decodedClipCache.values()].filter(entry => entry.status === 'ready').length,
+        pending: [...this.rawClipCache.values(), ...this.decodedClipCache.values()]
+          .filter(entry => entry.status === 'pending').length,
+        ...this.audioCacheStats,
+      },
     };
   }
 
@@ -941,6 +1242,8 @@ export class RaceControlDirector {
     this._cancelCurrent();
     this.queue.length = 0;
     if (this.captionTimer) this.clearTimer(this.captionTimer);
+    this.rawClipCache.clear();
+    this.decodedClipCache.clear();
   }
 }
 

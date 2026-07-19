@@ -21,6 +21,8 @@ const profiles = [
 ];
 const results = [];
 const errors = [];
+const LAUNCH_DRAW_CALL_BUDGET = 280;
+const COURSE_DRAW_CALL_BUDGET = 220;
 
 for (const expected of profiles) {
   const context = await browser.newContext({
@@ -49,10 +51,21 @@ for (const expected of profiles) {
   await page.goto(target.href, { waitUntil: 'networkidle', timeout: 90_000 });
   await page.waitForFunction(() => Boolean(window.__aiRace), null, { timeout: 90_000 });
   await page.click('#startBtn');
-  const graphics = await page.evaluate(async () => {
+  const launchGraphics = await page.evaluate(async () => {
     const race = window.__aiRace;
     race.testMode(true);
     race.skipCountdown();
+    let graphics = race.graphics();
+    for (let frame = 0; frame < 10; frame++) {
+      race.renderOnce();
+      graphics = race.graphics();
+      if (graphics.triangles >= 10_000) break;
+      await new Promise(resolve => setTimeout(resolve, 60));
+    }
+    return graphics;
+  });
+  const graphics = await page.evaluate(async () => {
+    const race = window.__aiRace;
     race.teleport(race.track.length * 0.12, 0, 0, 185);
     // Parallel shader compilation can need several event-loop turns on a
     // fresh or contended software context. Measure only after the complete
@@ -106,8 +119,11 @@ for (const expected of profiles) {
   if (graphics.width * graphics.height > expected.pixelBudget * 1.02) {
     pageErrors.push(`pixel budget exceeded: ${graphics.width}x${graphics.height}`);
   }
-  if (graphics.calls <= 0 || graphics.calls > 220) {
-    pageErrors.push(`scene draw calls out of budget: ${graphics.calls}`);
+  if (launchGraphics.calls <= 0 || launchGraphics.calls > LAUNCH_DRAW_CALL_BUDGET) {
+    pageErrors.push(`launch draw calls out of budget: ${launchGraphics.calls}`);
+  }
+  if (graphics.calls <= 0 || graphics.calls > COURSE_DRAW_CALL_BUDGET) {
+    pageErrors.push(`course draw calls out of budget: ${graphics.calls}`);
   }
   if (!Number.isFinite(graphics.triangles) || graphics.triangles < 10_000) {
     pageErrors.push(`invalid triangle count: ${graphics.triangles}`);
@@ -138,7 +154,7 @@ for (const expected of profiles) {
     }
   }
 
-  results.push({ ...graphics, errors: pageErrors });
+  results.push({ ...graphics, launch: launchGraphics, errors: pageErrors });
   errors.push(...pageErrors.map(error => `${expected.name}: ${error}`));
   await context.close();
 }

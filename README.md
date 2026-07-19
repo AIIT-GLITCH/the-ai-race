@@ -1,6 +1,7 @@
 # THE AI RACE // RACE TO ORBIT
 
-Twelve frontier AI labs. One unclaimed orbital data center. You pilot OPENAI
+Twelve frontier AI labs. One unclaimed orbital data center. You drive OPENAI
+as the neutral ORBIT-01 pilot or an optional text-only Sam Altman tribute role
 across a 2.7 km, 24-meter-wide anti-gravity ribbon to claim the HELIOS compute
 array before Anthropic, Google DeepMind, xAI, Meta, DeepSeek, Mistral, Qwen,
 Moonshot, Cohere, MiniMax, and Microsoft AI.
@@ -33,6 +34,21 @@ npm start
 
 Standard gamepads and full touch controls are supported.
 
+## Race setup
+
+- **Rookie:** calmer rivals, stronger grip and edge assistance, slower boost
+  drain, faster shield recovery, and reduced impact damage.
+- **Pro:** the balanced intended race.
+- **Apex:** faster cornering and overtakes, tighter catch-up bounds, no edge
+  assist, harsher impacts, and a more demanding boost economy.
+- **Driver:** choose ORBIT-01 or the text-only Sam Altman tribute role. The
+  Sam option changes the ship credential, HUD, and results presentation only.
+  It uses no likeness, endorsement claim, or cloned voice.
+
+Preferences persist locally, personal bests are tracked separately for each
+difficulty, and the results screen supports both immediate replay and returning
+to setup.
+
 ## The four-game fusion
 
 - **Fable Zero:** load-bearing 3D manifold physics, banking, slope, anti-gravity
@@ -56,11 +72,15 @@ Standard gamepads and full touch controls are supported.
   solar arrays, sector gates, data-stream tunnel, aurora, particles, and bloom.
 - A priority-driven orbital race-control narrator calls stable lead changes,
   overtakes, sectors, draft links, core pickups, damage, final approach, and
-  classification with baked speech, radio processing, captions, and music ducking.
+  classification with baked speech, radio processing, captions, and music
+  ducking. Compressed clips prefetch during setup; launch-critical lines decode
+  in a silent offline context while the menu is open, while the remaining calls
+  decode in small idle-time batches so speech starts quickly without stealing
+  the opening race frames.
 - Four cameras, spatial Doppler rival engines, generative sector-aware score,
   start tones, boost roar, wind, and wall scrape.
 - Desktop, keyboard, gamepad, portrait mobile, pause, restart, mute, results,
-  minimap, live gaps, and no-refresh replay.
+  contextual live gaps, minimap, per-difficulty records, and no-refresh replay.
 
 ## Cinematic rendering pass
 
@@ -82,6 +102,7 @@ browser build remains playable without proprietary SDKs.
 npm run check
 npm run build
 npm run test:browser  # requires Playwright/Chromium
+npm run test:options
 npm run test:graphics
 npm run test:mobile
 node scripts/rtx-a6000-qa.mjs  # optional genuine NVIDIA WebGL validation
