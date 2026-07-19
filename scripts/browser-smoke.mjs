@@ -38,7 +38,25 @@ await page.evaluate(() => {
 });
 await page.screenshot({ path: '.qa/race.png' });
 await page.evaluate(() => window.__aiRace.step(7_000));
-const raced = await page.evaluate(() => window.__aiRace.state());
+await page.waitForFunction(
+  () => window.__aiRace.raceControl().history.some(call => call.kind === 'finish'),
+  null,
+  { timeout: 10_000 },
+);
+const raced = await page.evaluate(() => {
+  window.__aiRace.showResults();
+  const caption = document.querySelector('#raceControl');
+  const style = getComputedStyle(caption);
+  return {
+    ...window.__aiRace.state(),
+    finishCaption: {
+      live: caption.classList.contains('live'),
+      visible: style.visibility !== 'hidden' && Number(style.opacity) > 0,
+      aboveResults: Number.parseInt(style.zIndex, 10) > 30,
+      text: caption.querySelector('[data-race-control-copy]')?.textContent || '',
+    },
+  };
+});
 
 if (initial.state.phase !== 'menu') errors.push(`initial phase: ${initial.state.phase}`);
 if (initial.state.ships.length !== 12) errors.push(`field size: ${initial.state.ships.length}`);
@@ -46,6 +64,12 @@ if (initial.track.length < 2_600) errors.push(`track too short: ${initial.track.
 if (initial.track.halfWidth < 11) errors.push(`track too narrow: ${initial.track.halfWidth}`);
 if (!raced.finished) errors.push('player did not complete the orbital sprint');
 if (!raced.ships.every(ship => Number.isFinite(ship.speed))) errors.push('non-finite rival telemetry');
+if (!raced.finishCaption.live || !raced.finishCaption.visible || !raced.finishCaption.aboveResults) {
+  errors.push(`finish caption hidden at results boundary: ${JSON.stringify(raced.finishCaption)}`);
+}
+if (!/HELIOS|Compute claimed/i.test(raced.finishCaption.text)) {
+  errors.push(`finish caption missing classification: ${raced.finishCaption.text}`);
+}
 if (errors.length) {
   console.error(JSON.stringify({ initial, raced, errors }, null, 2));
   await browser.close();

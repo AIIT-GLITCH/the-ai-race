@@ -25,6 +25,10 @@ const PROFILES = {
     solarPanels: 280,
     drones: 112,
     speedLines: 240,
+    orbitalCenters: 14,
+    volumetricBeams: 20,
+    dynamicEmitters: 3,
+    refractiveCores: true,
   },
   HIGH: {
     name: 'HIGH',
@@ -46,6 +50,10 @@ const PROFILES = {
     solarPanels: 160,
     drones: 72,
     speedLines: 150,
+    orbitalCenters: 9,
+    volumetricBeams: 12,
+    dynamicEmitters: 2,
+    refractiveCores: true,
   },
   BALANCED: {
     name: 'BALANCED',
@@ -67,6 +75,10 @@ const PROFILES = {
     solarPanels: 48,
     drones: 24,
     speedLines: 64,
+    orbitalCenters: 4,
+    volumetricBeams: 0,
+    dynamicEmitters: 1,
+    refractiveCores: false,
   },
 };
 
@@ -168,6 +180,115 @@ function lunarTexture(THREE) {
   return texture;
 }
 
+function loadMaterialTexture(THREE, renderer, url, srgb = false) {
+  const texture = new THREE.TextureLoader().load(
+    url,
+    loaded => {
+      loaded.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      loaded.needsUpdate = true;
+    },
+    undefined,
+    () => console.warn(`[THE AI RACE] optional material texture unavailable: ${url}`),
+  );
+  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function orbitalHullMaps(THREE, renderer, profile) {
+  const size = profile.name === 'ULTRA' ? 512 : 256;
+  const colorCanvas = document.createElement('canvas');
+  const roughCanvas = document.createElement('canvas');
+  const bumpCanvas = document.createElement('canvas');
+  colorCanvas.width = colorCanvas.height = roughCanvas.width = roughCanvas.height =
+    bumpCanvas.width = bumpCanvas.height = size;
+  const color = colorCanvas.getContext('2d');
+  const rough = roughCanvas.getContext('2d');
+  const bump = bumpCanvas.getContext('2d');
+  color.fillStyle = '#9ba7b0';
+  rough.fillStyle = '#a9a9a9';
+  bump.fillStyle = '#808080';
+  color.fillRect(0, 0, size, size);
+  rough.fillRect(0, 0, size, size);
+  bump.fillRect(0, 0, size, size);
+
+  // A physically legible spacecraft skin: replaceable pressure panels,
+  // fasteners, thermal-blanket seams, and directional micrometeor scoring.
+  const columns = 8;
+  const rows = 12;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < columns; x++) {
+      const x0 = x * size / columns;
+      const y0 = y * size / rows;
+      const alternating = (x * 3 + y * 5) % 5;
+      const value = 132 + alternating * 7;
+      color.fillStyle = `rgb(${value},${value + 7},${value + 12})`;
+      color.fillRect(x0 + 2, y0 + 2, size / columns - 4, size / rows - 4);
+      color.strokeStyle = 'rgba(226,239,246,.28)';
+      color.lineWidth = 1;
+      color.strokeRect(x0 + 2.5, y0 + 2.5, size / columns - 5, size / rows - 5);
+      rough.fillStyle = `rgb(${142 + alternating * 10},${142 + alternating * 10},${142 + alternating * 10})`;
+      rough.fillRect(x0 + 3, y0 + 3, size / columns - 6, size / rows - 6);
+      bump.strokeStyle = '#5f5f5f';
+      bump.lineWidth = 2;
+      bump.strokeRect(x0 + 2, y0 + 2, size / columns - 4, size / rows - 4);
+      for (const fx of [x0 + 5, x0 + size / columns - 5]) {
+        for (const fy of [y0 + 5, y0 + size / rows - 5]) {
+          bump.fillStyle = '#b8b8b8';
+          bump.beginPath();
+          bump.arc(fx, fy, 1.15, 0, Math.PI * 2);
+          bump.fill();
+        }
+      }
+    }
+  }
+  const random = mulberry32(0xA6000);
+  for (let i = 0; i < size * 2; i++) {
+    const x = random() * size;
+    const y = random() * size;
+    const length = 2 + random() * 18;
+    color.strokeStyle = `rgba(16,27,34,${.015 + random() * .05})`;
+    color.lineWidth = random() < .08 ? 1.2 : .45;
+    color.beginPath();
+    color.moveTo(x, y);
+    color.lineTo(x + (random() - .5) * 2, y + length);
+    color.stroke();
+  }
+  const toTexture = (canvas, srgb = false) => {
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  };
+  return {
+    color: toTexture(colorCanvas, true),
+    roughness: toTexture(roughCanvas),
+    bump: toTexture(bumpCanvas),
+  };
+}
+
+function crossedBeamGeometry(THREE) {
+  // Two intersecting quads produce a convincing light volume from every racing
+  // camera angle while remaining a single instanced draw call.
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    -0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0,
+    0, 0, -0.5, 0, 0, 0.5, 0, 1, 0.5, 0, 1, -0.5,
+  ], 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute([
+    0, 0, 1, 0, 1, 1, 0, 1,
+    0, 0, 1, 0, 1, 1, 0, 1,
+  ], 2));
+  geometry.setIndex([
+    0, 1, 2, 0, 2, 3,
+    4, 5, 6, 4, 6, 7,
+  ]);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function setInstance(mesh, index, matrix, position, quaternion, scale) {
   matrix.compose(position, quaternion, scale);
   mesh.setMatrixAt(index, matrix);
@@ -183,6 +304,46 @@ export function createSpectacle({
   profile,
 }) {
   const random = mulberry32(0x51A7E11);
+  // The A6000-baked atlas is split into browser-sized quadrants so each
+  // material occupies only the GPU memory it needs. Balanced/mobile keeps the
+  // procedural fallback and avoids these optional high-resolution maps.
+  const bakedMaps = profile.name === 'BALANCED' ? null : {
+    panel: loadMaterialTexture(
+      THREE,
+      renderer,
+      'assets/materials/orbital-compute-panel-v1.webp',
+      true,
+    ),
+    mli: loadMaterialTexture(THREE, renderer, 'assets/rtx/aerospace-mli.webp', true),
+    mliRoughness: loadMaterialTexture(
+      THREE,
+      renderer,
+      'assets/rtx/aerospace-mli-roughness.webp',
+    ),
+    rack: loadMaterialTexture(THREE, renderer, 'assets/rtx/aerospace-compute-rack.webp', true),
+    rackRoughness: loadMaterialTexture(
+      THREE,
+      renderer,
+      'assets/rtx/aerospace-compute-rack-roughness.webp',
+    ),
+    rackEmissive: loadMaterialTexture(
+      THREE,
+      renderer,
+      'assets/rtx/aerospace-compute-rack-emissive.webp',
+    ),
+    solar: loadMaterialTexture(THREE, renderer, 'assets/rtx/aerospace-solar.webp', true),
+    solarRoughness: loadMaterialTexture(
+      THREE,
+      renderer,
+      'assets/rtx/aerospace-solar-roughness.webp',
+    ),
+    radiator: loadMaterialTexture(THREE, renderer, 'assets/rtx/aerospace-radiator.webp', true),
+    radiatorRoughness: loadMaterialTexture(
+      THREE,
+      renderer,
+      'assets/rtx/aerospace-radiator-roughness.webp',
+    ),
+  };
   const root = new THREE.Group();
   root.name = 'CINEMATIC_ORBITAL_WORLD';
   scene.add(root);
@@ -196,6 +357,7 @@ export function createSpectacle({
   const scale = new THREE.Vector3();
   const local = new THREE.Vector3();
   const colors = [0x62e8ff, 0xff63c8, 0xdfff47, 0x8d7bff, 0xffb45c];
+  const emitterAnchors = [];
   const basisAt = (index, out = quaternion) => {
     const i = ((index % N) + N) % N;
     const r = track.rights[i], u = track.ups[i], t = track.tangents[i];
@@ -359,7 +521,8 @@ export function createSpectacle({
     const chassis = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshStandardMaterial({
-        color: 0x111927,
+        map: bakedMaps?.panel || null,
+        color: bakedMaps ? 0xc0c8d0 : 0x111927,
         emissive: 0x06101d,
         emissiveIntensity: .65,
         metalness: .9,
@@ -380,7 +543,17 @@ export function createSpectacle({
     );
     const racks = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, fog: true }),
+      new THREE.MeshStandardMaterial({
+        map: bakedMaps?.rack || null,
+        roughnessMap: bakedMaps?.rackRoughness || null,
+        emissiveMap: bakedMaps?.rackEmissive || null,
+        color: 0xffffff,
+        emissive: bakedMaps ? 0x8beeff : 0x000000,
+        emissiveIntensity: bakedMaps ? 1.35 : 0,
+        metalness: bakedMaps ? .72 : 0,
+        roughness: bakedMaps ? .3 : .6,
+        fog: true,
+      }),
       count * 3,
     );
     const antennae = new THREE.InstancedMesh(
@@ -426,12 +599,346 @@ export function createSpectacle({
     if (racks.instanceColor) racks.instanceColor.needsUpdate = true;
   }
 
+  // RTX Remix rebuilds Portal's simple assets as physically based, high-detail
+  // machinery. Our raster equivalent is a fleet of recognizable orbital data
+  // centers: pressure vessels, Whipple-shield collars, exposed coolant cores,
+  // heat-rejection wings, and structural spines. All repeated parts are
+  // instanced, preserving the quality-tier budgets.
+  const beamUniforms = { time: { value: 0 } };
+  {
+    const count = profile.orbitalCenters;
+    const hullMaps = orbitalHullMaps(THREE, renderer, profile);
+    const radialSegments = profile.name === 'ULTRA' ? 28 : (profile.name === 'HIGH' ? 20 : 12);
+    const hullMaterial = profile.name === 'BALANCED'
+      ? new THREE.MeshStandardMaterial({
+        map: hullMaps.color,
+        roughnessMap: hullMaps.roughness,
+        bumpMap: hullMaps.bump,
+        bumpScale: .16,
+        color: 0xaab4bc,
+        emissive: 0x26323a,
+        emissiveIntensity: .46,
+        metalness: .72,
+        roughness: .46,
+        envMapIntensity: .75,
+      })
+      : new THREE.MeshPhysicalMaterial({
+        map: hullMaps.color,
+        roughnessMap: hullMaps.roughness,
+        bumpMap: hullMaps.bump,
+        bumpScale: .22,
+        color: 0xb8c3ca,
+        emissive: 0x29363e,
+        emissiveIntensity: .52,
+        metalness: .78,
+        roughness: .34,
+        clearcoat: .42,
+        clearcoatRoughness: .22,
+        envMapIntensity: 1.55,
+      });
+    const insulationMaterial = new THREE.MeshPhysicalMaterial({
+      map: bakedMaps?.mli || null,
+      roughnessMap: bakedMaps?.mliRoughness || null,
+      color: bakedMaps ? 0xd5b46e : 0x9a6b27,
+      emissive: 0x241205,
+      emissiveIntensity: .3,
+      metalness: .86,
+      roughness: .37,
+      clearcoat: .18,
+      envMapIntensity: 1.3,
+    });
+    const structuralMaterial = new THREE.MeshStandardMaterial({
+      color: 0x18222d,
+      emissive: 0x07121d,
+      emissiveIntensity: .45,
+      metalness: .94,
+      roughness: .23,
+      envMapIntensity: 1.7,
+    });
+    const collarMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xa8b7c1,
+      emissive: 0x233743,
+      emissiveIntensity: .58,
+      metalness: .95,
+      roughness: .18,
+      clearcoat: .32,
+      clearcoatRoughness: .14,
+      envMapIntensity: 1.8,
+    });
+    const radiatorMaterial = new THREE.MeshPhysicalMaterial({
+      map: bakedMaps?.radiator || null,
+      roughnessMap: bakedMaps?.radiatorRoughness || null,
+      color: bakedMaps ? 0xc2d1d8 : 0x4a6372,
+      emissive: 0x17394a,
+      emissiveIntensity: .82,
+      metalness: .74,
+      roughness: .24,
+      clearcoat: .55,
+      clearcoatRoughness: .14,
+      envMapIntensity: 1.75,
+    });
+    const hulls = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(1, 1, 1, radialSegments, 1, false),
+      hullMaterial,
+      count * 2,
+    );
+    const caps = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(1, radialSegments, Math.max(8, radialSegments >> 1)),
+      insulationMaterial,
+      count * 2,
+    );
+    const collars = new THREE.InstancedMesh(
+      new THREE.TorusGeometry(1, .085, 5, radialSegments),
+      collarMaterial,
+      count * 6,
+    );
+    const spines = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      structuralMaterial,
+      count,
+    );
+    const radiators = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      radiatorMaterial,
+      count * 4,
+    );
+    const coolantRails = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }),
+      count * 8,
+    );
+    const coreMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      fog: false,
+    });
+    const cores = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(.62, .62, 1, radialSegments, 1, false),
+      coreMaterial,
+      count,
+    );
+    const glassMaterial = profile.refractiveCores
+      ? new THREE.MeshPhysicalMaterial({
+        color: 0xa7efff,
+        emissive: 0x071e2a,
+        emissiveIntensity: .42,
+        metalness: 0,
+        roughness: .055,
+        transmission: .78,
+        thickness: 1.7,
+        ior: 1.32,
+        clearcoat: 1,
+        clearcoatRoughness: .04,
+        envMapIntensity: 2.25,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+      })
+      : new THREE.MeshStandardMaterial({
+        color: 0x82dff5,
+        emissive: 0x0b3548,
+        emissiveIntensity: .8,
+        metalness: .1,
+        roughness: .2,
+        transparent: true,
+        opacity: .28,
+        depthWrite: false,
+      });
+    const glass = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(.82, .82, 1, radialSegments, 1, true),
+      glassMaterial,
+      count,
+    );
+    glass.renderOrder = 4;
+
+    const stationData = [];
+    const axialRotation = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      Math.PI * .5,
+    );
+    for (let i = 0; i < count; i++) {
+      const fraction = .04 + (i + .28 + random() * .38) / count * .87;
+      const index = Math.floor(fraction * N);
+      const side = i % 2 ? 1 : -1;
+      const lateral = side * (halfWidth + 48 + random() * 44);
+      // Keep the landmarks in the chase camera's upper-middle field of view at
+      // a 90–130 m reveal distance; radiator wings still rise above the smaller
+      // service modules around them.
+      const up = 4 + random() * 18;
+      const radius = 5.4 + random() * 3.1;
+      const length = 31 + random() * 27;
+      const panelWidth = 23 + random() * 18;
+      const panelHeight = 10 + random() * 9;
+      const p = pointAt(index, lateral, up, (random() - .5) * 18, new THREE.Vector3());
+      const q = basisAt(index, new THREE.Quaternion());
+      const axialQ = q.clone().multiply(axialRotation);
+      const segmentLength = length * .35;
+      const segmentOffset = length * .31;
+
+      for (let segment = 0; segment < 2; segment++) {
+        const z = (segment ? 1 : -1) * segmentOffset;
+        const segmentPosition = local.set(0, 0, z).applyQuaternion(q).add(p);
+        setInstance(
+          hulls,
+          i * 2 + segment,
+          matrix,
+          segmentPosition,
+          axialQ,
+          scale.set(radius, segmentLength, radius),
+        );
+      }
+      for (let end = 0; end < 2; end++) {
+        const z = (end ? 1 : -1) * (segmentOffset + segmentLength * .5);
+        const capPosition = local.set(0, 0, z).applyQuaternion(q).add(p);
+        setInstance(caps, i * 2 + end, matrix, capPosition, q, scale.setScalar(radius * 1.015));
+      }
+      for (let ring = 0; ring < 6; ring++) {
+        const z = (ring / 5 - .5) * length * .94;
+        const ringPosition = local.set(0, 0, z).applyQuaternion(q).add(p);
+        setInstance(collars, i * 6 + ring, matrix, ringPosition, q, scale.setScalar(radius * 1.085));
+      }
+      const spinePosition = local.set(0, -radius * 1.38, 0).applyQuaternion(q).add(p);
+      setInstance(spines, i, matrix, spinePosition, q, scale.set(1.05, 1.05, length * 1.24));
+
+      for (let panel = 0; panel < 4; panel++) {
+        const wing = panel % 2 ? 1 : -1;
+        const z = panel < 2 ? -length * .22 : length * .22;
+        const panelX = wing * (radius + panelWidth * .5 + 3.2);
+        const panelPosition = local.set(panelX, 0, z).applyQuaternion(q).add(p);
+        setInstance(
+          radiators,
+          i * 4 + panel,
+          matrix,
+          panelPosition,
+          q,
+          scale.set(panelWidth, panelHeight, .34),
+        );
+        radiators.setColorAt(
+          i * 4 + panel,
+          new THREE.Color((i + panel) % 4 === 0 ? 0x607b89 : 0x3f5968),
+        );
+        for (let rail = 0; rail < 2; rail++) {
+          const railX = panelX + (rail ? 1 : -1) * panelWidth * .29;
+          const railPosition = local.set(railX, 0, z - .22).applyQuaternion(q).add(p);
+          const railIndex = i * 8 + panel * 2 + rail;
+          setInstance(
+            coolantRails,
+            railIndex,
+            matrix,
+            railPosition,
+            q,
+            scale.set(.18, panelHeight * .84, .13),
+          );
+          coolantRails.setColorAt(
+            railIndex,
+            new THREE.Color(colors[(i + panel) % colors.length]).multiplyScalar(1.35),
+          );
+        }
+      }
+
+      const coreLength = length * .23;
+      setInstance(cores, i, matrix, p, axialQ, scale.set(radius * .48, coreLength, radius * .48));
+      setInstance(glass, i, matrix, p, axialQ, scale.set(radius * .7, coreLength * 1.06, radius * .7));
+      const stationColor = new THREE.Color(colors[i % colors.length]);
+      cores.setColorAt(i, stationColor.clone().multiplyScalar(1.7));
+      stationData.push({ index, side, p: p.clone(), q: q.clone(), fraction, radius, length, color: stationColor });
+      emitterAnchors.push({
+        s: fraction * total,
+        position: p.clone(),
+        color: stationColor,
+        power: profile.name === 'ULTRA' ? 3600 : (profile.name === 'HIGH' ? 2500 : 900),
+        range: profile.name === 'BALANCED' ? 105 : 180,
+      });
+    }
+    for (const mesh of [hulls, caps, collars, spines, radiators, coolantRails, cores, glass]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.frustumCulled = false;
+      root.add(mesh);
+    }
+    for (const mesh of [radiators, coolantRails, cores]) {
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+    hulls.name = 'ORBITAL_COMPUTE_PRESSURE_VESSELS';
+    glass.name = 'ORBITAL_COMPUTE_REFRACTIVE_CORES';
+    radiators.name = 'ORBITAL_COMPUTE_HEAT_REJECTION_ARRAYS';
+
+    if (profile.volumetricBeams > 0) {
+      const beams = new THREE.InstancedMesh(
+        crossedBeamGeometry(THREE),
+        new THREE.ShaderMaterial({
+          uniforms: beamUniforms,
+          vertexColors: true,
+          transparent: true,
+          depthWrite: false,
+          depthTest: true,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+          fog: false,
+          vertexShader: `
+            varying vec2 vUv; varying vec3 vColor;
+            void main(){
+              vUv=uv; vColor=instanceColor;
+              gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.0);
+            }`,
+          fragmentShader: `
+            uniform float time; varying vec2 vUv; varying vec3 vColor;
+            float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+            void main(){
+              float edge=pow(max(0.0,1.0-abs(vUv.x*2.0-1.0)),1.8);
+              float lengthFade=smoothstep(0.0,.1,vUv.y)*(1.0-smoothstep(.68,1.0,vUv.y));
+              float grain=.7+.3*hash(floor(gl_FragCoord.xy*.35)+floor(time*8.0));
+              float a=edge*lengthFade*grain*.12;
+              if(a<.004) discard;
+              gl_FragColor=vec4(vColor*(1.1+edge*1.8),a);
+            }`,
+        }),
+        profile.volumetricBeams,
+      );
+      for (let i = 0; i < profile.volumetricBeams; i++) {
+        const station = stationData[i % stationData.length];
+        const beamOffset = (Math.floor(i / stationData.length) - .5) * 10;
+        const origin = station.p.clone().add(
+          local.set(0, station.radius * .75, beamOffset).applyQuaternion(station.q),
+        );
+        const target = pointAt(
+          station.index,
+          station.side * (halfWidth + 20 + (i % 3) * 7),
+          2 + (i % 2) * 7,
+          beamOffset * .45,
+          new THREE.Vector3(),
+        );
+        const direction = target.clone().sub(origin);
+        const beamLength = direction.length();
+        const beamQ = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          direction.normalize(),
+        );
+        setInstance(
+          beams,
+          i,
+          matrix,
+          origin,
+          beamQ,
+          scale.set(6 + (i % 4) * 2.1, beamLength, 6 + (i % 4) * 2.1),
+        );
+        beams.setColorAt(i, station.color.clone().multiplyScalar(1.3));
+      }
+      beams.instanceMatrix.needsUpdate = true;
+      if (beams.instanceColor) beams.instanceColor.needsUpdate = true;
+      beams.frustumCulled = false;
+      beams.renderOrder = 2;
+      beams.name = 'VOLUMETRIC_RADIANCE_SHAFTS';
+      root.add(beams);
+    }
+  }
+
   // Solar-compute farms fill the negative space outside the course.
   {
     const panels = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshStandardMaterial({
-        color: 0x173c79,
+        map: bakedMaps?.solar || null,
+        roughnessMap: bakedMaps?.solarRoughness || null,
+        color: bakedMaps ? 0xb6d2eb : 0x173c79,
         emissive: 0x0b2d68,
         emissiveIntensity: 1.15,
         metalness: .78,
@@ -509,7 +1016,15 @@ export function createSpectacle({
       const p = pointAt(index, 0, .45, 0, new THREE.Vector3());
       setInstance(dark, i, matrix, p, q, scale.setScalar(1));
       setInstance(portalGlow, i, matrix, p, q, scale.setScalar(1));
-      portalGlow.setColorAt(i, new THREE.Color(colors[i % colors.length]).multiplyScalar(1.45));
+      const portalColor = new THREE.Color(colors[i % colors.length]);
+      portalGlow.setColorAt(i, portalColor.clone().multiplyScalar(1.45));
+      emitterAnchors.push({
+        s: fraction * total,
+        position: p.clone(),
+        color: portalColor,
+        power: profile.name === 'ULTRA' ? 270 : (profile.name === 'HIGH' ? 190 : 72),
+        range: 58,
+      });
     }
     dark.instanceMatrix.needsUpdate = true;
     portalGlow.instanceMatrix.needsUpdate = true;
@@ -696,15 +1211,42 @@ export function createSpectacle({
   const boostLight = new THREE.PointLight(0xdfff47, boostLightPower, 32, 2);
   scene.add(chaseLight, boostLight);
 
+  // RTXDI can evaluate huge light sets by resampling the most useful emitters.
+  // WebGL has no RTXDI, so we mirror its artistic behavior with a tiny,
+  // deterministic light reservoir: dozens of visible fixtures exist, but only
+  // the nearest few become real direct lights. Shader cost is therefore fixed.
+  const reservoirLights = [];
+  for (let i = 0; i < profile.dynamicEmitters; i++) {
+    const light = new THREE.PointLight(0xffffff, 0, 120, 2);
+    light.name = `EMISSIVE_RESERVOIR_LIGHT_${i + 1}`;
+    light.userData.initialized = false;
+    reservoirLights.push(light);
+    scene.add(light);
+  }
+  // A low-energy, player-local bounce approximates the colored indirect light
+  // Portal RTX gets from ReSTIR GI / NRC without applying a global color wash.
+  const bounceLightPower = profile.name === 'ULTRA' ? 24 : (profile.name === 'HIGH' ? 14 : 0);
+  const bounceLight = bounceLightPower > 0
+    ? new THREE.PointLight(0x538cc4, bounceLightPower, 38, 2)
+    : null;
+  if (bounceLight) {
+    bounceLight.name = 'PLAYER_LOCAL_RADIANCE_CACHE';
+    scene.add(bounceLight);
+  }
+
   const tempForward = new THREE.Vector3();
   const tempRight = new THREE.Vector3();
   const tempUp = new THREE.Vector3();
   const tempStart = new THREE.Vector3();
   const tempEnd = new THREE.Vector3();
+  const tempRadianceColor = new THREE.Color();
+  const neutralRadianceColor = new THREE.Color(0x7da0c8);
+  const nearestEmitters = [];
 
   function update({ time, player, state }) {
     starUniforms.time.value = time;
     moteUniforms.time.value = time;
+    beamUniforms.time.value = profile.reducedMotion ? 0 : time;
     relayMoon.rotation.y = -.7 + time * .006;
     if (portalGlow) portalGlow.material.opacity = .58 + Math.sin(time * 2.2) * .16;
 
@@ -736,6 +1278,50 @@ export function createSpectacle({
 
     const speed = Math.hypot(player.vA || 0, player.vL || 0);
     const boost = player.boosting ? 1 : 0;
+    const playerS = ((player.s % total) + total) % total;
+
+    nearestEmitters.length = 0;
+    for (const anchor of emitterAnchors) {
+      const rawDistance = Math.abs(anchor.s - playerS);
+      const distance = Math.min(rawDistance, total - rawDistance);
+      let insertAt = nearestEmitters.length;
+      while (insertAt > 0 && nearestEmitters[insertAt - 1].distance > distance) insertAt--;
+      if (insertAt < reservoirLights.length) {
+        nearestEmitters.splice(insertAt, 0, { anchor, distance });
+        if (nearestEmitters.length > reservoirLights.length) nearestEmitters.pop();
+      }
+    }
+    const liveEnergy = state?.phase === 'race' || state?.phase === 'countdown' ? 1 : .56;
+    for (let i = 0; i < reservoirLights.length; i++) {
+      const light = reservoirLights[i];
+      const selected = nearestEmitters[i];
+      if (!selected) {
+        light.intensity = 0;
+        continue;
+      }
+      const { anchor, distance } = selected;
+      if (!light.userData.initialized) {
+        light.position.copy(anchor.position);
+        light.color.copy(anchor.color);
+        light.userData.initialized = true;
+      } else {
+        light.position.lerp(anchor.position, .16);
+        light.color.lerp(anchor.color, .14);
+      }
+      light.distance = anchor.range;
+      const proximity = 1 - Math.min(1, distance / Math.max(52, anchor.range * 1.25));
+      light.intensity += (anchor.power * liveEnergy * (.12 + proximity * .88) - light.intensity) * .18;
+    }
+    if (bounceLight) {
+      const sourceColor = nearestEmitters[0]?.anchor.color || tempRadianceColor.set(0x538cc4);
+      tempRadianceColor.copy(sourceColor).lerp(neutralRadianceColor, .58);
+      bounceLight.color.lerp(tempRadianceColor, .08);
+      bounceLight.position.set(player.wx, player.wy, player.wz)
+        .addScaledVector(tempUp, -4.6)
+        .addScaledVector(tempRight, -2.3);
+      bounceLight.intensity = bounceLightPower * liveEnergy * (.82 + boost * .18);
+    }
+
     const phase = (time * (42 + speed * 1.9)) % 210;
     for (let i = 0; i < speedSeeds.length; i++) {
       const seed = speedSeeds[i];
@@ -773,6 +1359,10 @@ export function createSpectacle({
       portals: profile.portals,
       drones: profile.drones,
       speedLines: profile.speedLines,
+      orbitalCenters: profile.orbitalCenters,
+      volumetricBeams: profile.volumetricBeams,
+      activeEmissiveLights: profile.dynamicEmitters,
+      refractiveCores: profile.refractiveCores,
     }),
   };
 }

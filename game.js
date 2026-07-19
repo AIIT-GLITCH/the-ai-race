@@ -12,6 +12,7 @@
 import * as THREE from './vendor/three.module.js';
 import { buildTrack, nearestSample, validateTrack, HALF_WIDTH, WALL_OFFSET } from './track.js';
 import { createSpectacle, selectRenderProfile } from './spectacle.js';
+import { createRaceControl } from './race-control.js';
 
 // ---------- deterministic PRNG for scenery ----------
 function mulberry32(seed) {
@@ -1426,7 +1427,7 @@ function newShipState(spec, gridSlot) {
     progress: -deltaS(s, startS) * -1 - 0, // set below
     lap: 0, cps: [false, false],
     lapStart: 0, lapTimes: [], best: Infinity, finished: false, finishTime: 0,
-    wrongWay: 0, stuck: 0, hitWall: false, wallSide: 0,
+    wrongWay: 0, stuck: 0, hitWall: false, wallSide: 0, impactSerial: 0,
     wx: 0, wy: 0, wz: 0, roll: 0, pitch: 0, prevVF: 0, latA: 0, bobPhase: rng() * 6.28,
     aiBias: (spec.lane ?? 0) + (rng() - 0.5) * 0.8,
     aiBoostT: 0,
@@ -1634,6 +1635,8 @@ function collideShips(ships) {
         if (vn < -3) {
           const dmg = Math.min(6, -vn * 0.8);
           a.shield = Math.max(0, a.shield - dmg); b.shield = Math.max(0, b.shield - dmg);
+          if (a.spec.player) a.impactSerial++;
+          if (b.spec.player) b.impactSerial++;
         }
       }
     }
@@ -1691,6 +1694,7 @@ const state = {
   muted: false, cameraMode: 0, cameraLabelT: 0, autopilot: false,
   finishDelay: -1, countdownBeat: null,
 };
+let raceControl = null;
 
 const ships = ROSTER.map((spec, i) => {
   const st = newShipState(spec, i);
@@ -1752,13 +1756,42 @@ function resetRace() {
   }
   hud.msg.textContent = '';
   hud.menu.classList.remove('show'); hud.results.classList.remove('show'); hud.pause.classList.remove('show');
+  document.body.classList.remove('results-active');
   document.body.classList.add('race-active');
   camSnap();
+  raceControl?.reset(raceControlSnapshot());
 }
 
 function ranking() {
   return [...ships].sort((a, b) =>
     (b.finished - a.finished) || (a.finished ? a.finishTime - b.finishTime : b.progress - a.progress));
+}
+
+function raceControlSnapshot() {
+  const order = ranking();
+  return {
+    phase: state.phase,
+    time: state.raceTime,
+    progress: THREE.MathUtils.clamp((player.lapProgress ?? player.progress) / L, 0, 1),
+    player: {
+      name: player.spec.name,
+      rank: order.indexOf(player) + 1,
+      packets: player.packets,
+      packetTotal: DATA_CORES.length,
+      drafting: player.drafting,
+      shield: player.shield,
+      limp: player.limp,
+      hitWall: player.hitWall,
+      impactSerial: player.impactSerial,
+      finished: player.finished,
+    },
+    order: order.map(c => ({
+      name: c.spec.name,
+      progress: c.progress,
+      finished: c.finished,
+      finishTime: c.finishTime,
+    })),
+  };
 }
 
 // ---------- input ----------
@@ -1871,6 +1904,7 @@ let ac = null, engineNode = null, engineFilt = null, engineGain = null,
   whooshFilt = null, whooshGain = null, windGain = null, boostGain = null, boostSub = null,
   scrapeFilt = null, scrapeGain = null, masterGain = null, scoreGain = null,
   scoreFilt = null, scoreVoices = [], lastAudioT = 0;
+let narratorDucking = false;
 const aiVoices = [];
 const _lisDir = new THREE.Vector3();
 function ensureAudio() {
@@ -1964,7 +1998,17 @@ function launchTone(go = false) {
 function setMuted(m) {
   state.muted = m;
   hud.mute.textContent = m ? 'SOUND // OFF' : 'SOUND // ON';
-  if (masterGain && ac) masterGain.gain.setTargetAtTime(m ? 0 : MASTER_VOL, ac.currentTime, 0.03);
+  raceControl?.setMuted(m);
+  if (masterGain && ac) {
+    const level = m ? 0 : MASTER_VOL * (narratorDucking ? 0.3 : 1);
+    masterGain.gain.setTargetAtTime(level, ac.currentTime, 0.03);
+  }
+}
+function setNarratorDuck(ducking) {
+  narratorDucking = Boolean(ducking);
+  if (!masterGain || !ac) return;
+  const level = state.muted ? 0 : MASTER_VOL * (narratorDucking ? 0.3 : 1);
+  masterGain.gain.setTargetAtTime(level, ac.currentTime, narratorDucking ? 0.04 : 0.16);
 }
 function updateAudio() {
   if (!ac || !engineGain) return;
@@ -2279,12 +2323,14 @@ const post = (() => {
       impactFx: { value: 0 },
       uTime: { value: 0 },
       fxEnabled: { value: renderProfile.reducedMotion ? 0 : 1 },
+      texel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
     },
     vertexShader: V,
     fragmentShader: `
       uniform sampler2D tex; uniform sampler2D bloom; uniform sampler2D bloomWide;
       uniform float strength; uniform float exposure; uniform float speedFx;
       uniform float boostFx; uniform float impactFx; uniform float uTime; uniform float fxEnabled;
+      uniform vec2 texel;
       varying vec2 vUv;
       vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.0,1.0);}
       float hash12(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
@@ -2306,6 +2352,17 @@ const post = (() => {
           streak+=texture2D(tex,clamp(vUv-center*.029*motion,0.0,1.0)).rgb*.24;
           c=mix(c,streak/3.1,motion*.72);
         }
+        // A restrained reconstruction-style unsharp pass restores material
+        // detail lost to adaptive render scaling. This is ordinary spatial
+        // filtering, not a DLSS or neural-reconstruction claim.
+        vec3 base=texture2D(tex,vUv).rgb;
+        vec3 neighbours=(
+          texture2D(tex,clamp(vUv+vec2(texel.x,0.0),0.0,1.0)).rgb+
+          texture2D(tex,clamp(vUv-vec2(texel.x,0.0),0.0,1.0)).rgb+
+          texture2D(tex,clamp(vUv+vec2(0.0,texel.y),0.0,1.0)).rgb+
+          texture2D(tex,clamp(vUv-vec2(0.0,texel.y),0.0,1.0)).rgb
+        )*.25;
+        c+=(base-neighbours)*(.22-motion*.08);
         vec3 glow=texture2D(bloom,vUv).rgb+texture2D(bloomWide,vUv).rgb*.62;
         c+=glow*strength*(1.0+boostFx*.18);
         c=mix(c,vec3(dot(c,vec3(.299,.587,.114))),impactFx*.18);
@@ -2321,6 +2378,7 @@ const post = (() => {
   function setSize(w, h) {
     if (!renderProfile.post) return;
     sceneRT.setSize(w, h);
+    compMat.uniforms.texel.value.set(1 / Math.max(1, w), 1 / Math.max(1, h));
     const bw = Math.max(1, w >> 1), bh = Math.max(1, h >> 1);
     blurA.setSize(bw, bh); blurB.setSize(bw, bh);
     const ww = Math.max(1, w >> 2), wh = Math.max(1, h >> 2);
@@ -2383,7 +2441,15 @@ const hud = {
   sectorName: document.getElementById('sectorName'), sectorIndex: document.getElementById('sectorIndex'),
   progressFill: document.getElementById('progressFill'), distanceLeft: document.getElementById('distanceLeft'),
   resultsSub: document.getElementById('resultsSub'),
+  raceControl: document.getElementById('raceControl'),
 };
+raceControl = createRaceControl({
+  captionEl: hud.raceControl,
+  sectors: SECTORS,
+  muted: state.muted,
+  getAudioContext: () => ac,
+  onDuck: setNarratorDuck,
+});
 document.getElementById('startBtn').addEventListener('click', () => { ensureAudio(); resetRace(); });
 document.getElementById('againBtn').addEventListener('click', () => resetRace());
 document.getElementById('resumeBtn').addEventListener('click', () => { state.phase = 'race'; hud.pause.classList.remove('show'); });
@@ -2508,6 +2574,7 @@ function updateHUD(dt) {
 function showResults() {
   state.phase = 'results';
   document.body.classList.remove('race-active');
+  document.body.classList.add('results-active');
   const rows = ranking().map((c, i) => {
     const you = c.spec.player ? ' class="you"' : '';
     return `<tr${you}><td>${i + 1}</td><td>${c.spec.name}</td><td>${c.spec.player ? `${c.packets}/${DATA_CORES.length}` : '—'}</td><td>${c.finished ? fmt(c.finishTime) : 'DNF'}</td></tr>`;
@@ -2619,6 +2686,7 @@ function monitorRenderPerformance(dt) {
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min((now - last) / 1000, 0.1);
+  let resultsReady = false;
   last = now;
   const t = now / 1000;
   if (state.phase === 'countdown') {
@@ -2642,7 +2710,7 @@ function frame(now) {
     if (state.phase === 'race' && player.finished) {
       if (state.finishDelay < 0) state.finishDelay = 0;
       state.finishDelay += dt;
-      if (state.finishDelay >= 4.2 || ships.every(c => c.finished)) showResults();
+      resultsReady = state.finishDelay >= 4.2 || ships.every(c => c.finished);
     }
   }
   syncMeshes(t);
@@ -2650,6 +2718,11 @@ function frame(now) {
   updateParticles(dt);
   updateStartLights();
   updateCamera(dt);
+  // Let race control observe the finish while the simulation is still in the
+  // race phase. Otherwise a last-place finish can transition straight to the
+  // results screen before the classification call is detected.
+  raceControl.update(raceControlSnapshot());
+  if (resultsReady) showResults();
   updateAudio();
   spectacle.update({ time: t, player, ships, state });
   // animated materials
@@ -2719,6 +2792,7 @@ const testApi = {
     syncMeshes(t);
     for (const c of ships) updateTrail(c, 1 / 60);
     updateStartLights(); if (!camFrozen) camSnap(); hudClock = 1; updateHUD(0);
+    raceControl.update(raceControlSnapshot());
     spectacle.update({ time: t, player, ships, state });
     skyMats.forEach(m => { m.uniforms.uTime.value = t; });
     earthDynamic.materials.forEach(m => {
@@ -2757,6 +2831,8 @@ const testApi = {
       aiVoices: aiVoices.length,
     };
   },
+  raceControl() { return raceControl.inspect(); },
+  raceControlSnapshot,
   renderer, camera, scene, THREE, showResults, frameAt: s => JSON.parse(JSON.stringify(frameAt(s))),
   track: { length: L, halfWidth: HALF_WIDTH, samples: N, startIdx: START_IDX },
   graphics() {

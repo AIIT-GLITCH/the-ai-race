@@ -134,6 +134,80 @@
   }
   #msg.warn { color: #ff8065; text-shadow: 0 0 34px rgba(255, 65, 38, .9); }
 
+  #raceControl {
+    left: 50%;
+    bottom: clamp(88px, 12vh, 132px);
+    width: min(760px, calc(100vw - 48px));
+    transform: translate(-50%, 10px);
+    opacity: 0;
+    transition: opacity .18s ease, transform .22s ease;
+    text-align: center;
+  }
+  #raceControl.live {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+  body:not(.race-active):not(.results-active) #raceControl {
+    visibility: hidden;
+  }
+  body.results-active #raceControl {
+    z-index: 40;
+    bottom: max(18px, env(safe-area-inset-bottom));
+    visibility: visible;
+  }
+  .race-control-shell {
+    display: inline-grid;
+    grid-template-columns: 3px auto;
+    max-width: 100%;
+    overflow: hidden;
+    background: linear-gradient(105deg, rgba(3, 7, 12, .94), rgba(9, 18, 23, .8));
+    border: 1px solid rgba(108, 236, 255, .23);
+    box-shadow: 0 14px 45px rgba(0,0,0,.4), inset 0 0 26px rgba(108,236,255,.035);
+    backdrop-filter: blur(14px);
+  }
+  .race-control-pulse {
+    background: var(--cyan);
+    box-shadow: 0 0 14px var(--cyan);
+    animation: controlPulse .85s steps(2) infinite;
+  }
+  .race-control-body {
+    min-width: 0;
+    padding: 9px 15px 10px;
+    text-align: left;
+  }
+  .race-control-signal {
+    margin-bottom: 4px;
+    color: var(--cyan);
+    font-size: 8px;
+    font-weight: 950;
+    letter-spacing: .27em;
+    text-transform: uppercase;
+  }
+  .race-control-copy {
+    color: var(--ink);
+    font-size: clamp(13px, 1.25vw, 17px);
+    font-weight: 800;
+    letter-spacing: .035em;
+    line-height: 1.28;
+    text-wrap: balance;
+  }
+  #raceControl[data-kind="finish"] .race-control-shell {
+    border-color: rgba(223, 255, 71, .55);
+    box-shadow: 0 14px 45px rgba(0,0,0,.42), 0 0 34px rgba(223,255,71,.13);
+  }
+  #raceControl[data-kind="finish"] .race-control-pulse {
+    background: var(--acid);
+    box-shadow: 0 0 16px var(--acid);
+  }
+  #raceControl[data-kind="finish"] .race-control-signal { color: var(--acid); }
+  #raceControl[data-kind="shieldLow"] .race-control-pulse,
+  #raceControl[data-kind="shieldGone"] .race-control-pulse,
+  #raceControl[data-kind="impact"] .race-control-pulse {
+    background: var(--orange);
+    box-shadow: 0 0 14px var(--orange);
+  }
+  @keyframes controlPulse { 50% { opacity: .35; } }
+
   #leaderboard {
     left: 22px;
     top: 146px;
@@ -450,6 +524,12 @@
     background: rgba(7,10,15,.78);
     border-top: 3px solid var(--acid);
   }
+  #results .panel {
+    background:
+      linear-gradient(180deg, rgba(4,8,13,.76), rgba(4,8,13,.94) 58%, rgba(4,8,13,.98)),
+      url("assets/rtx/orbital-compute-array.webp") center 42% / cover no-repeat;
+    box-shadow: 0 24px 90px rgba(0,0,0,.62), 0 0 70px rgba(103,239,255,.08);
+  }
   .panel h2 {
     margin-bottom: 8px;
     font-size: clamp(38px, 6vw, 72px);
@@ -553,6 +633,13 @@
     #speedUnit b { font-size: 10px; }
     .barLabel { font-size: 7px; }
     #msg { top: 20%; font-size: 36px; }
+    #raceControl {
+      bottom: calc(3.5vh + min(65vw, 260px) + 18px);
+      width: calc(100vw - 24px);
+    }
+    .race-control-shell { display: grid; width: 100%; }
+    .race-control-body { padding: 8px 10px 9px; }
+    .race-control-copy { font-size: 12px; }
   }
 
   @media (max-height: 680px) and (min-width: 700px) {
@@ -583,6 +670,15 @@
 </div>
 
 <div class="hud" id="msg"></div>
+<section class="hud" id="raceControl" role="status" aria-live="polite" aria-atomic="true">
+  <div class="race-control-shell">
+    <i class="race-control-pulse" aria-hidden="true"></i>
+    <div class="race-control-body">
+      <div class="race-control-signal" data-race-control-signal>Orbital Race Control</div>
+      <div class="race-control-copy" data-race-control-copy></div>
+    </div>
+  </div>
+</section>
 <div class="hud" id="leaderboard" aria-label="live lab order"></div>
 
 <section class="hud" id="telemetry" aria-label="vehicle telemetry">

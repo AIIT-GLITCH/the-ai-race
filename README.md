@@ -54,10 +54,27 @@ Standard gamepads and full touch controls are supported.
 - Drafting that reduces drag and slowly charges the inference-burst meter.
 - A colossal procedural orbital data center, Earth limb, compute monoliths,
   solar arrays, sector gates, data-stream tunnel, aurora, particles, and bloom.
+- A priority-driven orbital race-control narrator calls stable lead changes,
+  overtakes, sectors, draft links, core pickups, damage, final approach, and
+  classification with baked speech, radio processing, captions, and music ducking.
 - Four cameras, spatial Doppler rival engines, generative sector-aware score,
   start tones, boost roar, wind, and wall scrape.
 - Desktop, keyboard, gamepad, portrait mobile, pause, restart, mute, results,
   minimap, live gaps, and no-refresh replay.
+
+## Cinematic rendering pass
+
+The High and Ultra profiles use a browser-safe, Portal-with-RTX-inspired
+material and lighting pass: detailed PBR spacecraft surfaces, refractive
+coolant cores, heat-rejection wings, emissive fixtures backed by a bounded
+nearest-light reservoir, local colored bounce light, volumetric radiance
+shafts, HDR bloom, ACES tone mapping, adaptive resolution, and restrained
+reconstruction sharpening.
+
+This is still WebGL raster rendering. It does not claim native path tracing,
+RTXDI, ReSTIR GI, Neural Radiance Cache, DLSS, frame generation, Reflex, or
+RTX IO. The visual equivalents are deliberately bounded so the same static
+browser build remains playable without proprietary SDKs.
 
 ## Verification
 
@@ -65,6 +82,9 @@ Standard gamepads and full touch controls are supported.
 npm run check
 npm run build
 npm run test:browser  # requires Playwright/Chromium
+npm run test:graphics
+npm run test:mobile
+node scripts/rtx-a6000-qa.mjs  # optional genuine NVIDIA WebGL validation
 ```
 
 The browser exposes `window.__aiRace` for deterministic simulation, state
@@ -73,9 +93,16 @@ as a compatibility alias for the donor regression tooling.
 
 ## Original art and third-party code
 
-The title key art in `assets/ai-race-key-art.webp` was generated specifically
-for this submission with OpenAI image generation. All in-race geometry, ships,
-textures, effects, UI, music, and sound are generated in code.
+The title key art and compute-panel material were generated specifically for
+this submission with OpenAI image generation. The orbital material atlas and
+environment plates were modeled and rendered locally in Blender on an RTX
+A6000; their reproducible sources and reference provenance are in
+`assets/rtx/README.md`. All geometry, ships, effects, UI, music, and vehicle
+audio remain project-original and procedural.
+
+Race-control speech was baked from original lines with the Apache-2.0
+Kokoro-82M model and a generic stock voice—never a cloned or identity-linked
+voice. The exact lines and bake script are included.
 
 Three.js is vendored under `vendor/three.module.js` and used under the MIT
 license. See `THIRD_PARTY.md`.
