@@ -91,6 +91,8 @@ const ACCEL = 28, BRAKE = 36;
 const GRIP = 6.7, GRIP_DRIFT = 1.65;
 const BOOST_ACCEL = 24, BOOST_DRAIN = 27, PAD_CHARGE = 34, PAD_KICK = 10;
 const SHIELD_MAX = 100, BOOST_VMAX_MUL = 1.3;
+const SLINGSHOT_ACCEL = 42, SLINGSHOT_VMAX_MUL = 1.46;
+const SLINGSHOT_DURATION = .82, SLINGSHOT_COST = 11;
 const LAPS = 1;
 
 // Mission sectors and energy zones are expressed as fractions of the orbital
@@ -140,6 +142,14 @@ const DIFFICULTY_PRESETS = Object.freeze({
     rechargeRate: 50,
     boostDrain: .92,
     padCharge: 1.08,
+    boostGrip: .90,
+    impactLockout: .34,
+    boostSpill: 8,
+    damageCooldown: 2.4,
+    impactSpeedLoss: .11,
+    wakeRate: .72,
+    slingshotCooldown: 11,
+    aiSlingshotLimit: 1,
   }),
   pro: Object.freeze({
     id: 'pro',
@@ -156,18 +166,26 @@ const DIFFICULTY_PRESETS = Object.freeze({
     playerGrip: 1,
     wallDamage: 1,
     collisionDamage: 1,
-    passiveRegen: 1.5,
+    passiveRegen: .7,
     rechargeRate: 45,
     boostDrain: 1,
     padCharge: 1,
+    boostGrip: .84,
+    impactLockout: .48,
+    boostSpill: 11,
+    damageCooldown: 4,
+    impactSpeedLoss: .20,
+    wakeRate: 1,
+    slingshotCooldown: 8.5,
+    aiSlingshotLimit: 2,
   }),
   apex: Object.freeze({
     id: 'apex',
     label: 'APEX',
-    pace: 1.04,
-    corner: 1.07,
-    burstOffset: -12,
-    boostDuration: 1.15,
+    pace: 1.085,
+    corner: 1.14,
+    burstOffset: -16,
+    boostDuration: 1.22,
     bandMin: -.012,
     bandMax: .018,
     passLook: 38,
@@ -176,10 +194,18 @@ const DIFFICULTY_PRESETS = Object.freeze({
     playerGrip: 1,
     wallDamage: 1.15,
     collisionDamage: 1.1,
-    passiveRegen: 1,
+    passiveRegen: 0,
     rechargeRate: 40,
     boostDrain: 1.06,
     padCharge: .96,
+    boostGrip: .78,
+    impactLockout: .64,
+    boostSpill: 14,
+    damageCooldown: 6,
+    impactSpeedLoss: .26,
+    wakeRate: 1.08,
+    slingshotCooldown: 6.8,
+    aiSlingshotLimit: 3,
   }),
 });
 
@@ -1061,7 +1087,10 @@ function updateStartLights() {
 }
 
 // HELIOS: a monumental orbital data center wrapped around the finish vector.
-const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
+const heliosDynamic = {
+  station: null, ring: null, inner: null, ringEnergy: null,
+  glow: null, beacon: null, beam: null, panels: [],
+};
 {
   // Put the destination just before the finish seam: it stays behind the
   // launch camera, then becomes the final structure the player flies through.
@@ -1123,6 +1152,7 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
   );
   ringEnergy.material.color.multiplyScalar(1.7);
   station.add(ringEnergy);
+  heliosDynamic.ringEnergy = ringEnergy;
   const nodeGeometry = new THREE.SphereGeometry(.78, 10, 7);
   const nodeMaterial = new THREE.MeshBasicMaterial({
     color: 0xdfff47,
@@ -1153,6 +1183,7 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
   stationGlow.scale.set(90, 90, 1);
   stationGlow.position.z = -3;
   station.add(stationGlow);
+  heliosDynamic.glow = stationGlow;
   for (let i = 0; i < 8; i++) {
     // Keep the lower center of the HELIOS ring as a clean racing aperture.
     // Rack 6 would otherwise cancel the station's +28m lift and sit directly
@@ -1191,6 +1222,7 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
   const beacon = new THREE.PointLight(0xdfff47, 9, 220, 1.6);
   beacon.position.z = 5;
   station.add(beacon);
+  heliosDynamic.beacon = beacon;
   const beam = new THREE.Mesh(
     new THREE.ConeGeometry(5.5, 115, 24, 1, true),
     new THREE.MeshBasicMaterial({
@@ -1206,6 +1238,7 @@ const heliosDynamic = { station: null, ring: null, inner: null, panels: [] };
   beam.rotation.x = Math.PI / 2;
   beam.position.z = -54;
   station.add(beam);
+  heliosDynamic.beam = beam;
   scene.add(station);
 }
 
@@ -1621,7 +1654,11 @@ function newShipState(spec, gridSlot) {
     psi: 0, vA: 0, vL: 0,
     steer: 0, steerIn: 0, throttle: 0, brake: 0, airbrake: 0, boostIn: 0,
     boost: 18, boosting: false, shield: SHIELD_MAX, limp: false, padGlow: 0,
-    drafting: false, packets: 0,
+    boostLockout: 0, damageCooldown: 0, cleanRun: true,
+    drafting: false, draftCharge: 0, draftStrength: 0, draftTarget: null,
+    slingshotReady: false, slingshotReadySerial: 0,
+    slingshotT: 0, slingshotCooldown: 0, slingshotSerial: 0, slingshots: 0,
+    boostWasDown: false, surgeRequest: false, packets: 0,
     progress: -deltaS(s, startS) * -1 - 0, // set below
     lap: 0, cps: [false, false],
     lapStart: 0, lapTimes: [], best: Infinity, finished: false, finishTime: 0,
@@ -1632,19 +1669,83 @@ function newShipState(spec, gridSlot) {
   };
 }
 
-function isDrafting(c) {
-  if (Math.hypot(c.vA, c.vL) < 30) return false;
+const raceTune = () => activeDifficulty();
+// Protocol difficulty changes rival pace and attack cadence. Rival durability
+// stays on one Pro integrity baseline so harsher player assists do not make
+// Apex opponents crash more often and accidentally become easier.
+const integrityTune = c => c.spec.player ? activeDifficulty() : DIFFICULTY_PRESETS.pro;
+
+function draftInfo(c) {
+  if (c.finished || Math.hypot(c.vA, c.vL) < 29) return null;
+  let best = null;
   for (const other of ships) {
     if (other === c || other.finished) continue;
     const ahead = deltaS(c.s, other.s);
-    if (ahead > 3 && ahead < 28 && Math.abs(c.lat - other.lat) < 3.1) return true;
+    const lateral = Math.abs(c.lat - other.lat);
+    if (ahead <= 3.2 || ahead >= 31 || lateral >= 3.4) continue;
+    const alignment = 1 - lateral / 3.4;
+    const proximity = 1 - (ahead - 3.2) / 27.8;
+    const strength = THREE.MathUtils.clamp(alignment * .76 + proximity * .24, .12, 1);
+    if (!best || strength > best.strength || (strength === best.strength && ahead < best.gap)) {
+      best = { target: other, gap: ahead, strength };
+    }
   }
-  return false;
+  return best;
+}
+
+function armSlingshot(c) {
+  if (c.slingshotReady) return false;
+  c.draftCharge = 1;
+  c.slingshotReady = true;
+  c.slingshotReadySerial++;
+  return true;
+}
+
+function fireSlingshot(c) {
+  const tune = raceTune();
+  if (!c.slingshotReady || c.slingshotCooldown > 0 ||
+      (!c.spec.player && c.slingshots >= tune.aiSlingshotLimit) ||
+      c.limp || c.hitWall || c.boostLockout > 0 ||
+      c.boost < SLINGSHOT_COST) return false;
+  c.boost = Math.max(0, c.boost - SLINGSHOT_COST);
+  c.boosting = true;
+  c.slingshotReady = false;
+  c.draftCharge = 0;
+  c.slingshotT = SLINGSHOT_DURATION;
+  c.slingshotSerial++;
+  c.slingshots++;
+  c.slingshotCooldown = tune.slingshotCooldown;
+  c.surgeRequest = false;
+  if (c.spec.player) {
+    triggerMoment('slingshot', { text: 'SLINGSHOT DEPLOYED' });
+    momentTone('slingshot');
+    haptic(14);
+  }
+  return true;
+}
+
+function disruptShip(c, severity = 1, options = {}) {
+  const tune = integrityTune(c);
+  const hit = THREE.MathUtils.clamp(severity, .45, 1.45);
+  c.boosting = false;
+  c.slingshotT = 0;
+  c.slingshotReady = false;
+  c.draftCharge *= .22;
+  c.boostLockout = Math.max(c.boostLockout, tune.impactLockout * hit);
+  c.damageCooldown = Math.max(c.damageCooldown, tune.damageCooldown);
+  c.boost = Math.max(0, c.boost - tune.boostSpill * hit);
+  const speedLossScale = options.speedLossScale ?? 1;
+  c.vA *= Math.max(.7, 1 - tune.impactSpeedLoss * hit * speedLossScale);
+  c.vL *= .72;
+  c.cleanRun = false;
+  if (c.spec.player) c.impactSerial++;
 }
 
 function stepShip(c, raceTime, freeze) {
   if (c.finished) {
     c.boosting = false;
+    c.slingshotT = 0;
+    c.slingshotReady = false;
     c.throttle = 0;
     c.brake = 1;
     c.vA *= Math.exp(-.34 * DT);
@@ -1663,6 +1764,40 @@ function stepShip(c, raceTime, freeze) {
   const spd = Math.abs(c.vA);
 
   if (!freeze) {
+    c.boostLockout = Math.max(0, c.boostLockout - DT);
+    c.damageCooldown = Math.max(0, c.damageCooldown - DT);
+    c.slingshotT = Math.max(0, c.slingshotT - DT);
+    c.slingshotCooldown = Math.max(0, c.slingshotCooldown - DT);
+
+    const wake = c.slingshotT > 0 ? null : draftInfo(c);
+    c.drafting = Boolean(wake);
+    c.draftTarget = wake?.target || null;
+    c.draftStrength = wake?.strength || 0;
+    const canEarnSlingshot = c.spec.player || c.slingshots < raceTune().aiSlingshotLimit;
+    if (!canEarnSlingshot) {
+      c.slingshotReady = false;
+      c.draftCharge = 0;
+    } else if (!c.slingshotReady && c.slingshotT <= 0 && c.slingshotCooldown <= 0) {
+      if (wake) {
+        const wakeRate = raceTune().wakeRate;
+        c.draftCharge = Math.min(1, c.draftCharge + (.62 + wake.strength * .31) * wakeRate * DT);
+      } else {
+        c.draftCharge = Math.max(0, c.draftCharge - .34 * DT);
+      }
+      if (c.draftCharge >= 1) armSlingshot(c);
+    } else if (c.slingshotReady) {
+      c.draftCharge = 1;
+    }
+
+    const boostDown = c.boostIn > .5;
+    const boostPressed = boostDown && !c.boostWasDown;
+    if (c.slingshotReady && (c.spec.player ? boostPressed : c.surgeRequest)) fireSlingshot(c);
+    c.boostWasDown = boostDown;
+    c.surgeRequest = false;
+    const slingshotActive = c.slingshotT > 0;
+    const canBoost = !c.limp && !c.hitWall && c.boostLockout <= 0 && !c.finished;
+    c.boosting = canBoost && (slingshotActive || (boostDown && c.boost > .5));
+
     // steering: rate-limited, speed-tapered; +1 = LEFT = psi decreases
     const target = c.steerIn / (1 + (spd / 34) ** 2 * 0.7);
     c.steer += THREE.MathUtils.clamp(target - c.steer, -6 * DT, 6 * DT);
@@ -1688,17 +1823,25 @@ function stepShip(c, raceTime, freeze) {
     let vR = -c.vA * sinP + c.vL * cosP;
 
     // thrust / brake
-    const vmax = c.spec.vmax * (c.boosting ? BOOST_VMAX_MUL : 1) * (c.limp ? 0.8 : 1);
+    const vmaxMul = slingshotActive
+      ? SLINGSHOT_VMAX_MUL
+      : (c.boosting ? BOOST_VMAX_MUL : 1);
+    const vmax = c.spec.vmax * vmaxMul * (c.limp ? 0.78 : 1);
     if (c.throttle > 0) vF += c.throttle * ACCEL * Math.max(0, 1 - vF / vmax) * DT * (c.limp ? 0.72 : 1);
     if (c.boosting) vF += BOOST_ACCEL * Math.max(0, 1 - vF / vmax) * DT;
+    if (slingshotActive && c.boosting) {
+      vF += SLINGSHOT_ACCEL * Math.max(0, 1 - vF / vmax) * DT;
+    }
     if (c.brake > 0) { vF -= BRAKE * c.brake * DT; if (vF < 0) vF = 0; }
-    c.drafting = isDrafting(c);
     const aero = c.drafting ? 0.58 : 1;
     vF -= (0.3 + 0.0019 * vF * Math.abs(vF) * aero) * Math.sign(vF) * DT * (c.throttle > 0 ? 0.3 : 0.85);
-    if (c.drafting) c.boost = Math.min(100, c.boost + 2.8 * DT);
     // lateral grip (airbrake drops it = drift)
     const grip = (c.airbrake > 0 ? GRIP_DRIFT : GRIP) *
-      (c.spec.player && !c.airbrake ? activeDifficulty().playerGrip : 1);
+      (c.spec.player && !c.airbrake ? activeDifficulty().playerGrip : 1) *
+      // Rivals keep a fixed burst-grip baseline; protocol difficulty changes
+      // their pace and attack opportunities rather than destabilizing steering.
+      (c.boosting && !c.airbrake ? (c.spec.player ? activeDifficulty().boostGrip : .94) : 1) *
+      (slingshotActive && !c.airbrake ? .92 : 1);
     vR *= Math.exp(-grip * DT);
 
     // recompose to track frame
@@ -1716,9 +1859,9 @@ function stepShip(c, raceTime, freeze) {
     c.s = wrapS(c.s + dsRaw);
     c.lat += c.vL * DT;
 
-    // boost bookkeeping
-    c.boosting = c.boostIn > 0 && c.boost > 0.5 && !c.finished;
-    if (c.boosting) {
+    // Ordinary burst drains continuously. A slingshot pays its energy on
+    // deployment, so its short attack envelope cannot die halfway through.
+    if (c.boosting && !slingshotActive) {
       const drain = c.spec.player ? activeDifficulty().boostDrain : 1;
       c.boost = Math.max(0, c.boost - BOOST_DRAIN * drain * DT);
     }
@@ -1749,6 +1892,10 @@ function stepShip(c, raceTime, freeze) {
           c.packets++;
           c.boost = Math.min(100, c.boost + 18);
           c.shield = Math.min(SHIELD_MAX, c.shield + 7);
+          if (!c.slingshotReady && c.slingshotT <= 0 && c.slingshotCooldown <= 0) {
+            c.draftCharge = Math.min(1, c.draftCharge + .28);
+            if (c.draftCharge >= 1) armSlingshot(c);
+          }
           c.padGlow = 1.3;
           padPing();
         }
@@ -1758,9 +1905,10 @@ function stepShip(c, raceTime, freeze) {
     const rs = RECHARGE.f * L;
     const rd = deltaS(rs, c.s);
     const onRecharge = rd > 0 && rd < RECHARGE.len;
-    const rechargeRate = c.spec.player
-      ? (onRecharge ? activeDifficulty().rechargeRate : activeDifficulty().passiveRegen)
-      : (onRecharge ? 45 : 1.5);
+    const tune = integrityTune(c);
+    const rechargeRate = onRecharge
+      ? tune.rechargeRate
+      : (c.damageCooldown > 0 ? 0 : tune.passiveRegen);
     c.shield = Math.min(SHIELD_MAX, c.shield + rechargeRate * DT);
     if (c.shield > 22) c.limp = false;
 
@@ -1776,6 +1924,7 @@ function stepShip(c, raceTime, freeze) {
 
   // wall containment: glance, never stick (shield pays for contact)
   if (Math.abs(c.lat) > EDGE) {
+    const enteredWall = !c.hitWall;
     const sgn = c.lat > 0 ? 1 : -1;
     c.lat = EDGE * sgn;
     const vOut = c.vL * sgn;
@@ -1789,12 +1938,17 @@ function stepShip(c, raceTime, freeze) {
     }
     if (!freeze) {
       const damage = c.spec.player ? activeDifficulty().wallDamage : 1;
-      c.shield = Math.max(0, c.shield - 7 * DT * damage); // scrape
+      c.shield = Math.max(0, c.shield - 11 * DT * damage); // scrape
     }
     if (c.shield <= 0) c.limp = true;
+    if (!freeze && enteredWall && (vOut > .6 || spd > 18)) {
+      const highSpeed = Math.max(0, spd - 42) / 65;
+      disruptShip(c, .68 + Math.min(1.35, Math.max(Math.max(vOut, 0) / 10, highSpeed)));
+    }
+    c.boostLockout = Math.max(c.boostLockout, .18);
     // deflect the nose along the track while touching: ships GLANCE off walls
     c.psi += THREE.MathUtils.clamp(-c.psi, -1, 1) * 3.0 * DT;
-    c.vA *= 0.996;
+    c.vA *= 0.992;
     c.hitWall = true; c.wallSide = sgn;
   } else { c.hitWall = false; c.wallSide = 0; }
 
@@ -1860,8 +2014,11 @@ function collideShips(ships) {
           const damageB = b.spec.player ? activeDifficulty().collisionDamage : 1;
           a.shield = Math.max(0, a.shield - dmg * damageA);
           b.shield = Math.max(0, b.shield - dmg * damageB);
-          if (a.spec.player) a.impactSerial++;
-          if (b.spec.player) b.impactSerial++;
+          if (a.shield <= 0) a.limp = true;
+          if (b.shield <= 0) b.limp = true;
+          const severity = THREE.MathUtils.clamp((-vn - 1.5) / 8, .5, 1.35);
+          disruptShip(a, severity, { speedLossScale: .34 });
+          disruptShip(b, severity, { speedLossScale: .34 });
         }
       }
     }
@@ -1926,6 +2083,19 @@ function aiDrive(c, playerProgress) {
   // boost on straights when it has charge (and slightly more eagerly when behind)
   c.aiBoostT = Math.max(0, c.aiBoostT - DT);
   const straight = curveAhead(c.s, 70) < 0.005;
+  const attackStraight = curveAhead(c.s, 48) < 0.0075;
+  const lateAttack = (c.lapProgress ?? c.progress) > L * .72;
+  const wakeGap = c.draftTarget ? deltaS(c.s, c.draftTarget.s) : Infinity;
+  c.surgeRequest = Boolean(
+    c.slingshotReady &&
+    c.boost >= SLINGSHOT_COST &&
+    c.boostLockout <= 0 &&
+    !c.limp &&
+    (attackStraight || lateAttack) &&
+    wakeGap > 3 &&
+    wakeGap < 34
+  );
+  if (c.surgeRequest) c.aiBoostT = Math.max(c.aiBoostT, .72);
   const burstAt = Math.max(
     20,
     (c.spec.burstAt ?? 55) + tune.burstOffset - (band > 0 ? 10 : 0),
@@ -1938,6 +2108,8 @@ function aiDrive(c, playerProgress) {
 
 function respawn(c) {
   c.lat = 0; c.psi = 0; c.vA = 0; c.vL = 0; c.steer = 0; c.stuck = 0;
+  c.boosting = false; c.slingshotT = 0; c.slingshotReady = false;
+  c.draftCharge = 0; c.boostLockout = Math.max(c.boostLockout, .5);
 }
 
 // ---------- race state ----------
@@ -2008,13 +2180,18 @@ function resetRace() {
   });
   state.raceTime = 0; state.countdown = 3.2; state.phase = 'countdown'; state.goTimer = 0;
   state.finishDelay = -1; state.countdownBeat = null;
+  resetMoments();
   for (const core of DATA_CORES) {
     core.collected = false;
     if (core.mesh) core.mesh.visible = true;
   }
   hud.msg.textContent = '';
   hud.msg.classList.remove('warn', 'draft', 'camera');
-  hud.launchCue?.classList.add('live');
+  if (hud.launchCue) {
+    hud.launchCue.innerHTML = '<b>HOLD THRUST</b> // STEER CLEAR // <b>SHIFT TO BURST</b>';
+    hud.launchCue.classList.remove('battle', 'ready', 'active');
+    hud.launchCue.classList.add('live');
+  }
   hud.menu.classList.remove('show'); hud.results.classList.remove('show'); hud.pause.classList.remove('show');
   document.body.classList.remove('results-active');
   document.body.classList.add('race-active');
@@ -2041,6 +2218,11 @@ function raceControlSnapshot() {
       packets: player.packets,
       packetTotal: DATA_CORES.length,
       drafting: player.drafting,
+      draftCharge: player.draftCharge,
+      draftTarget: player.draftTarget?.spec?.name || null,
+      slingshotReady: player.slingshotReady,
+      slingshotReadySerial: player.slingshotReadySerial,
+      slingshotSerial: player.slingshotSerial,
       shield: player.shield,
       limp: player.limp,
       hitWall: player.hitWall,
@@ -2164,7 +2346,8 @@ registerProcessor('turbine-proc', TurbineProc);`;
 
 let ac = null, engineNode = null, engineFilt = null, engineGain = null,
   whooshFilt = null, whooshGain = null, windGain = null, boostGain = null, boostSub = null,
-  scrapeFilt = null, scrapeGain = null, masterGain = null, scoreGain = null,
+  scrapeFilt = null, scrapeGain = null, masterGain = null, bedGain = null, momentGain = null,
+  scoreGain = null,
   scoreFilt = null, scoreVoices = [], lastAudioT = 0;
 let narratorDucking = false;
 const aiVoices = [];
@@ -2176,11 +2359,17 @@ function ensureAudio() {
     masterGain = ac.createGain();
     masterGain.gain.value = state.muted ? 0 : MASTER_VOL;
     masterGain.connect(ac.destination);
+    bedGain = ac.createGain();
+    bedGain.gain.value = narratorDucking ? .3 : 1;
+    momentGain = ac.createGain();
+    momentGain.gain.value = 1;
+    bedGain.connect(masterGain);
+    momentGain.connect(masterGain);
 
     engineFilt = ac.createBiquadFilter(); engineFilt.type = 'lowpass';
     engineFilt.frequency.value = 1200; engineFilt.Q.value = 0.8;
     engineGain = ac.createGain(); engineGain.gain.value = 0.0001;
-    engineFilt.connect(engineGain); engineGain.connect(masterGain);
+    engineFilt.connect(engineGain); engineGain.connect(bedGain);
 
     const blobURL = URL.createObjectURL(new Blob([TURBINE_WORKLET], { type: 'application/javascript' }));
     ac.audioWorklet.addModule(blobURL).then(() => {
@@ -2194,7 +2383,7 @@ function ensureAudio() {
         const pan = ac.createPanner();
         pan.panningModel = 'equalpower'; pan.distanceModel = 'inverse';
         pan.refDistance = 12; pan.rolloffFactor = 1.1; pan.maxDistance = 420;
-        node.connect(lp); lp.connect(g); g.connect(pan); pan.connect(masterGain);
+        node.connect(lp); lp.connect(g); g.connect(pan); pan.connect(bedGain);
         aiVoices.push({ c, node, g, pan, lastDist: null });
       }
     }).catch(e => console.warn('[THE AI RACE] turbine worklet failed:', e));
@@ -2206,7 +2395,7 @@ function ensureAudio() {
     for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
     const noise = ac.createBufferSource();
     noise.buffer = buf; noise.loop = true; noise.start();
-    const tap = (mk) => { const g = ac.createGain(); g.gain.value = 0; mk.connect(g); g.connect(masterGain); noise.connect(mk); return g; };
+    const tap = (mk) => { const g = ac.createGain(); g.gain.value = 0; mk.connect(g); g.connect(bedGain); noise.connect(mk); return g; };
     whooshFilt = ac.createBiquadFilter(); whooshFilt.type = 'bandpass';
     whooshFilt.frequency.value = 400; whooshFilt.Q.value = 0.7;
     whooshGain = tap(whooshFilt);
@@ -2216,7 +2405,7 @@ function ensureAudio() {
     boostGain = tap(bf);
     boostSub = ac.createOscillator(); boostSub.type = 'sine'; boostSub.frequency.value = 44;
     const bsg = ac.createGain(); bsg.gain.value = 0;
-    boostSub.connect(bsg); bsg.connect(masterGain); boostSub.start();
+    boostSub.connect(bsg); bsg.connect(bedGain); boostSub.start();
     boostSub._g = bsg;
     scrapeFilt = ac.createBiquadFilter(); scrapeFilt.type = 'bandpass';
     scrapeFilt.frequency.value = 1900; scrapeFilt.Q.value = 2.8;
@@ -2227,7 +2416,7 @@ function ensureAudio() {
     scoreGain = ac.createGain(); scoreGain.gain.value = 0.0001;
     scoreFilt = ac.createBiquadFilter(); scoreFilt.type = 'lowpass';
     scoreFilt.frequency.value = 620; scoreFilt.Q.value = 1.3;
-    scoreGain.connect(scoreFilt); scoreFilt.connect(masterGain);
+    scoreGain.connect(scoreFilt); scoreFilt.connect(bedGain);
     for (const [ratio, type, level] of [[1, 'sine', .42], [1.5, 'triangle', .16], [2, 'sine', .12]]) {
       const osc = ac.createOscillator(); osc.type = type;
       const gain = ac.createGain(); gain.gain.value = level;
@@ -2243,7 +2432,7 @@ function padPing() {
   o.frequency.setValueAtTime(660, t); o.frequency.exponentialRampToValueAtTime(1320, t + 0.09);
   const g = ac.createGain();
   g.gain.setValueAtTime(0.24, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-  o.connect(g); g.connect(masterGain);
+  o.connect(g); g.connect(momentGain || masterGain);
   o.start(t); o.stop(t + 0.3);
 }
 function launchTone(go = false) {
@@ -2255,41 +2444,72 @@ function launchTone(go = false) {
   const g = ac.createGain();
   g.gain.setValueAtTime(go ? .22 : .13, t);
   g.gain.exponentialRampToValueAtTime(.001, t + (go ? .42 : .16));
-  o.connect(g); g.connect(masterGain); o.start(t); o.stop(t + (go ? .44 : .18));
+  o.connect(g); g.connect(momentGain || masterGain); o.start(t); o.stop(t + (go ? .44 : .18));
+}
+function momentTone(kind = 'pass') {
+  if (!ac || state.muted) return;
+  const t = ac.currentTime;
+  const profiles = {
+    boost: [180, 520, .12, .2],
+    slingshot: [105, 1480, .24, .52],
+    pass: [440, 880, .11, .22],
+    danger: [310, 155, .1, .24],
+    sector: [520, 1040, .12, .3],
+    finish: [220, 1320, .22, .8],
+    impact: [92, 48, .13, .18],
+  };
+  const [from, to, level, duration] = profiles[kind] || profiles.pass;
+  const osc = ac.createOscillator();
+  osc.type = kind === 'impact' ? 'square' : (kind === 'slingshot' ? 'sawtooth' : 'triangle');
+  osc.frequency.setValueAtTime(from, t);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(30, to), t + duration * .72);
+  const filter = ac.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(kind === 'impact' ? 280 : 2200, t);
+  const gain = ac.createGain();
+  gain.gain.setValueAtTime(.0001, t);
+  gain.gain.exponentialRampToValueAtTime(level, t + .018);
+  gain.gain.exponentialRampToValueAtTime(.0001, t + duration);
+  osc.connect(filter); filter.connect(gain); gain.connect(momentGain || masterGain);
+  osc.start(t); osc.stop(t + duration + .02);
+}
+function haptic(ms = 10) {
+  if (renderProfile.reducedMotion || typeof navigator.vibrate !== 'function' || document.hidden) return;
+  navigator.vibrate(ms);
 }
 function setMuted(m) {
   state.muted = m;
   hud.mute.textContent = m ? 'SOUND // OFF' : 'SOUND // ON';
   raceControl?.setMuted(m);
   if (masterGain && ac) {
-    const level = m ? 0 : MASTER_VOL * (narratorDucking ? 0.3 : 1);
+    const level = m ? 0 : MASTER_VOL;
     masterGain.gain.setTargetAtTime(level, ac.currentTime, 0.03);
   }
 }
 function setNarratorDuck(ducking) {
   narratorDucking = Boolean(ducking);
-  if (!masterGain || !ac) return;
-  const level = state.muted ? 0 : MASTER_VOL * (narratorDucking ? 0.3 : 1);
-  masterGain.gain.setTargetAtTime(level, ac.currentTime, narratorDucking ? 0.04 : 0.16);
+  if (!bedGain || !ac) return;
+  bedGain.gain.setTargetAtTime(narratorDucking ? .3 : 1, ac.currentTime, narratorDucking ? 0.04 : 0.16);
 }
 function updateAudio() {
   if (!ac || !engineGain) return;
   const t = ac.currentTime;
   const active = state.phase === 'race' || state.phase === 'countdown';
   const spd = Math.hypot(player.vA, player.vL);
-  const f0 = 58 + spd * 4.0 + (player.boosting ? 60 : 0);
+  const slingshot = player.slingshotT > 0;
+  const f0 = 58 + spd * 4.0 + (player.boosting ? 60 : 0) + (slingshot ? 105 : 0);
   if (engineNode) {
     engineNode.parameters.get('freq').setTargetAtTime(f0, t, 0.05);
     engineNode.parameters.get('throttle').setTargetAtTime(active ? player.throttle : 0.05, t, 0.06);
     engineNode.parameters.get('boost').setTargetAtTime(player.boosting ? 1 : 0, t, 0.05);
   }
-  engineFilt.frequency.setTargetAtTime(500 + spd * 26 + (player.boosting ? 900 : 0), t, 0.06);
+  engineFilt.frequency.setTargetAtTime(500 + spd * 26 + (player.boosting ? 900 : 0) + (slingshot ? 850 : 0), t, 0.06);
   engineGain.gain.setTargetAtTime(active ? 0.32 : 0.06, t, 0.06);
   whooshFilt.frequency.setTargetAtTime(280 + spd * 15, t, 0.08);
   whooshGain.gain.setTargetAtTime(active ? Math.min(spd / player.spec.vmax, 1.2) * 0.16 : 0, t, 0.09);
   windGain.gain.setTargetAtTime(active ? (spd / player.spec.vmax) ** 2 * 0.1 : 0, t, 0.1);
-  boostGain.gain.setTargetAtTime(player.boosting ? 0.3 : 0, t, 0.05);
-  if (boostSub) boostSub._g.gain.setTargetAtTime(player.boosting ? 0.2 : 0, t, 0.05);
+  boostGain.gain.setTargetAtTime(player.boosting ? (slingshot ? .46 : .3) : 0, t, 0.05);
+  if (boostSub) boostSub._g.gain.setTargetAtTime(player.boosting ? (slingshot ? .3 : .2) : 0, t, 0.05);
   const scrape = player.hitWall && spd > 4;
   scrapeGain.gain.setTargetAtTime(active && scrape ? 0.2 : 0, t, 0.04);
   if (scoreGain && scoreVoices.length) {
@@ -2298,7 +2518,7 @@ function updateAudio() {
     const root = roots[Math.min(roots.length - 1, Math.floor(progress * roots.length))];
     scoreVoices.forEach(v => v.osc.frequency.setTargetAtTime(root * v.ratio, t, .45));
     scoreGain.gain.setTargetAtTime(active ? .11 + Math.min(spd / 800, .035) : .018, t, .6);
-    scoreFilt.frequency.setTargetAtTime(420 + spd * 8 + (player.boosting ? 480 : 0), t, .3);
+    scoreFilt.frequency.setTargetAtTime(420 + spd * 8 + (player.boosting ? 480 : 0) + (slingshot ? 360 : 0), t, .3);
   }
 
   const Ls = ac.listener;
@@ -2316,7 +2536,11 @@ function updateAudio() {
     v.lastDist = dist;
     if (v.pan.positionX) { v.pan.positionX.value = v.c.wx; v.pan.positionY.value = v.c.wy; v.pan.positionZ.value = v.c.wz; }
     const vSpd = Math.hypot(v.c.vA, v.c.vL);
-    v.node.parameters.get('freq').setTargetAtTime((58 + vSpd * 4.0 + (v.c.boosting ? 60 : 0)) * dop, t, 0.06);
+    v.node.parameters.get('freq').setTargetAtTime(
+      (58 + vSpd * 4.0 + (v.c.boosting ? 60 : 0) + (v.c.slingshotT > 0 ? 80 : 0)) * dop,
+      t,
+      0.06,
+    );
     v.node.parameters.get('throttle').setTargetAtTime(v.c.throttle || 0, t, 0.08);
     v.g.gain.setTargetAtTime(active ? 0.5 : 0, t, 0.1);
   }
@@ -2400,11 +2624,12 @@ function updateParticles(dt) {
         const f = frameAt(c.s);
         const cosP = Math.cos(c.psi), sinP = Math.sin(c.psi);
         const fx = f.t[0] * cosP + f.r[0] * sinP, fy = f.t[1] * cosP + f.r[1] * sinP, fz = f.t[2] * cosP + f.r[2] * sinP;
-        for (let i = 0; i < 2; i++) {
+        const flameCount = c.slingshotT > 0 ? 4 : 2;
+        for (let i = 0; i < flameCount; i++) {
           flames.spawn(
             c.wx - fx * 2.2 + (rng() - 0.5) * 0.5, c.wy - fy * 2.2 + 0.28, c.wz - fz * 2.2 + (rng() - 0.5) * 0.5,
             -fx * (spd * 0.3 + 6) + (rng() - 0.5) * 2, 0.4 + rng(), -fz * (spd * 0.3 + 6) + (rng() - 0.5) * 2,
-            0.28 + rng() * 0.24, 1.0);
+            0.28 + rng() * 0.24, c.slingshotT > 0 ? 1.34 : 1.0);
         }
       }
     }
@@ -2492,6 +2717,53 @@ function updateCamera(dt) {
   _camDir.copy(_fwd).lerp(_velDir, .28).normalize();
   const mode = state.cameraMode;
   const portraitPullback = THREE.MathUtils.clamp((1 - camera.aspect) * .85, 0, .5);
+
+  if (state.phase === 'countdown' && !renderProfile.reducedMotion) {
+    const scan = THREE.MathUtils.clamp((3.2 - state.countdown) / 3, 0, 1);
+    const eased = scan * scan * (3 - 2 * scan);
+    _want.set(player.wx, player.wy, player.wz)
+      .addScaledVector(_camDir, THREE.MathUtils.lerp(-14, -9.2, eased))
+      .addScaledVector(_rightW, THREE.MathUtils.lerp(10.5, 0, eased))
+      .addScaledVector(_upW, THREE.MathUtils.lerp(5.2, 3.25, eased));
+    springVector(camPos, camVel, _want, 2.25, .98, Math.min(dt, .1));
+    _want.set(player.wx, player.wy, player.wz)
+      .addScaledVector(_fwd, THREE.MathUtils.lerp(2, 9, eased))
+      .addScaledVector(_upW, .75);
+    springVector(camTgt, camTgtVel, _want, 2.5, 1, Math.min(dt, .1));
+    camUp.lerp(_upW, 1 - Math.exp(-5 * dt)).normalize();
+    camera.up.copy(camUp);
+    camera.position.copy(camPos);
+    camera.lookAt(camTgt);
+    camera.fov = THREE.MathUtils.damp(camera.fov, 58 + eased * 6, 5.5, dt);
+    camera.updateProjectionMatrix();
+    player.mesh.visible = true;
+    return;
+  }
+
+  if (state.phase === 'race' && player.finished && state.finishDelay >= 0 &&
+      !renderProfile.reducedMotion) {
+    const hero = THREE.MathUtils.clamp(state.finishDelay / 3, 0, 1);
+    const eased = hero * hero * (3 - 2 * hero);
+    const side = Math.sin(player.finishTime * 2.7) >= 0 ? 1 : -1;
+    _want.set(player.wx, player.wy, player.wz)
+      .addScaledVector(_camDir, THREE.MathUtils.lerp(-8, -3.5, eased))
+      .addScaledVector(_rightW, side * THREE.MathUtils.lerp(2.5, 12, eased))
+      .addScaledVector(_upW, THREE.MathUtils.lerp(3.4, 5.8, eased));
+    springVector(camPos, camVel, _want, 2.2, 1, Math.min(dt, .1));
+    _want.set(player.wx, player.wy, player.wz)
+      .addScaledVector(_fwd, THREE.MathUtils.lerp(10, 3.5, eased))
+      .addScaledVector(_upW, .7);
+    springVector(camTgt, camTgtVel, _want, 2.2, 1, Math.min(dt, .1));
+    camUp.lerp(_upW, 1 - Math.exp(-4 * dt)).normalize();
+    camera.up.copy(camUp);
+    camera.position.copy(camPos);
+    camera.lookAt(camTgt);
+    camera.fov = THREE.MathUtils.damp(camera.fov, 61 - eased * 4, 4.2, dt);
+    camera.updateProjectionMatrix();
+    player.mesh.visible = true;
+    return;
+  }
+
   _want.set(player.wx, player.wy, player.wz);
   if (mode === 1) {
     _want.addScaledVector(_camDir, -(15.5 + spd * .06) * (1 + portraitPullback))
@@ -2514,14 +2786,20 @@ function updateCamera(dt) {
   camUp.lerp(_want, 1 - Math.exp(-4.5 * dt)).normalize();
   camera.up.copy(camUp);
   camera.position.copy(camPos);
-  const shake = renderProfile.reducedMotion ? 0 : (player.hitWall ? .18 : (player.boosting ? .025 : 0));
+  const slingshotFx = momentLevel('slingshot');
+  const impactFx = Math.max(momentLevel('impact'), player.hitWall ? 1 : 0);
+  const shake = renderProfile.reducedMotion ? 0 :
+    (impactFx > 0 ? .18 * impactFx : (player.boosting ? .025 + slingshotFx * .04 : 0));
   if (shake) {
     camera.position.addScaledVector(_upW, Math.sin(performance.now() * .06) * shake);
     camera.position.addScaledVector(_rightW, Math.cos(performance.now() * .047) * shake * .7);
   }
   camera.lookAt(camTgt);
   const baseFov = mode === 1 ? 61 : (mode === 2 ? 70 : (mode === 3 ? 58 : 64));
-  const wantedFov = baseFov + Math.min(spd * (mode === 2 ? .08 : .14), 13) + (player.boosting && !renderProfile.reducedMotion ? 6 : 0);
+  const wantedFov = baseFov +
+    Math.min(spd * (mode === 2 ? .08 : .14), 13) +
+    (player.boosting && !renderProfile.reducedMotion ? 6 : 0) +
+    (!renderProfile.reducedMotion ? slingshotFx * 5 + momentLevel('launch') * 2.5 : 0);
   camera.fov = THREE.MathUtils.damp(camera.fov, wantedFov, mode === 2 ? 9 : 5.5, dt);
   camera.updateProjectionMatrix();
   player.mesh.visible = mode !== 2 || state.phase === 'menu' || state.phase === 'results';
@@ -2582,6 +2860,8 @@ const post = (() => {
       exposure: { value: 1.055 },
       speedFx: { value: 0 },
       boostFx: { value: 0 },
+      surgeFx: { value: 0 },
+      momentFx: { value: 0 },
       impactFx: { value: 0 },
       uTime: { value: 0 },
       fxEnabled: { value: renderProfile.reducedMotion ? 0 : 1 },
@@ -2591,7 +2871,8 @@ const post = (() => {
     fragmentShader: `
       uniform sampler2D tex; uniform sampler2D bloom; uniform sampler2D bloomWide;
       uniform float strength; uniform float exposure; uniform float speedFx;
-      uniform float boostFx; uniform float impactFx; uniform float uTime; uniform float fxEnabled;
+      uniform float boostFx; uniform float surgeFx; uniform float momentFx;
+      uniform float impactFx; uniform float uTime; uniform float fxEnabled;
       uniform vec2 texel;
       varying vec2 vUv;
       vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.0,1.0);}
@@ -2599,8 +2880,8 @@ const post = (() => {
       void main(){
         vec2 center=vUv-.5;
         float edge=dot(center,center);
-        float motion=(speedFx*.56+boostFx*.7)*fxEnabled;
-        float aberr=(.00025+edge*.0042)*(speedFx*.55+boostFx)*fxEnabled;
+        float motion=(speedFx*.56+boostFx*.7+surgeFx*.55)*fxEnabled;
+        float aberr=(.00025+edge*.0042)*(speedFx*.55+boostFx+surgeFx*.7)*fxEnabled;
         vec2 aberrDir=normalize(center+vec2(.0001))*aberr;
         vec3 c;
         c.r=texture2D(tex,clamp(vUv+aberrDir,0.0,1.0)).r;
@@ -2626,10 +2907,14 @@ const post = (() => {
         )*.25;
         c+=(base-neighbours)*(.22-motion*.08);
         vec3 glow=texture2D(bloom,vUv).rgb+texture2D(bloomWide,vUv).rgb*.62;
-        c+=glow*strength*(1.0+boostFx*.18);
+        c+=glow*strength*(1.0+boostFx*.18+surgeFx*.2);
+        float radius=length(center);
+        float attackRing=exp(-abs(radius-(.16+surgeFx*.25))*62.0)*surgeFx*fxEnabled;
+        c+=vec3(.62,1.0,.72)*attackRing*.22;
+        c*=1.0+momentFx*.035;
         c=mix(c,vec3(dot(c,vec3(.299,.587,.114))),impactFx*.18);
         c.r+=impactFx*.18*edge;
-        c=aces(c*exposure*(1.0+boostFx*.055));
+        c=aces(c*exposure*(1.0+boostFx*.055+surgeFx*.04));
         float vignette=1.0-edge*(.34+speedFx*.2);
         float grain=(hash12(gl_FragCoord.xy+uTime*73.1)-.5)*(.0025+speedFx*.0025)*fxEnabled;
         c=c*vignette+grain;
@@ -2678,11 +2963,23 @@ const post = (() => {
     compMat.uniforms.bloomWide.value = renderProfile.wideBloom ? wideA.texture : blurA.texture;
     pass(compMat, null);
   }
-  function dynamics(time, speed, boost, impact) {
+  function dynamics(time, speed, boost, impact, directedMoments = null) {
     compMat.uniforms.uTime.value = time;
     compMat.uniforms.speedFx.value = THREE.MathUtils.clamp((speed - 28) / 68, 0, 1);
-    compMat.uniforms.boostFx.value = boost ? 1 : 0;
-    compMat.uniforms.impactFx.value = impact ? 1 : 0;
+    const surge = directedMoments ? momentLevel('slingshot') : 0;
+    const boostKick = directedMoments ? momentLevel('boost') : 0;
+    const directed = directedMoments
+      ? Math.max(
+        momentLevel('launch'),
+        momentLevel('pass'),
+        momentLevel('sector'),
+        momentLevel('finish') * .5,
+      )
+      : 0;
+    compMat.uniforms.boostFx.value = Math.max(boost ? .72 : 0, boostKick, surge);
+    compMat.uniforms.surgeFx.value = surge;
+    compMat.uniforms.momentFx.value = directed;
+    compMat.uniforms.impactFx.value = Math.max(impact ? 1 : 0, directedMoments ? momentLevel('impact') : 0);
   }
   return { render, setSize, dynamics, sceneStats };
 })();
@@ -2708,8 +3005,11 @@ const hud = {
   resultDifficulty: document.getElementById('resultDifficulty'),
   resultTime: document.getElementById('resultTime'),
   resultCores: document.getElementById('resultCores'),
+  resultSlingshots: document.getElementById('resultSlingshots'),
+  resultsStinger: document.getElementById('resultsStinger'),
   raceControl: document.getElementById('raceControl'),
   launchCue: document.getElementById('launchCue'),
+  momentStamp: document.getElementById('momentStamp'),
   driverHud: document.getElementById('driverHud'),
   difficultyHud: document.getElementById('difficultyHud'),
   pilotSpeedLabel: document.getElementById('pilotSpeedLabel'),
@@ -2728,6 +3028,105 @@ function getNarratorDecodeContext() {
   }
   return narratorDecodeContext;
 }
+
+// ---------- moment direction ----------
+// These are time envelopes, not new scene objects. Important race actions feed
+// the existing camera, post pass, lighting, HUD, and synthesis buses.
+const MOMENT_DURATION = Object.freeze({
+  launch: 1.15,
+  boost: .48,
+  pass: .72,
+  sector: .82,
+  impact: .46,
+  finish: 3.1,
+  slingshot: 1.05,
+});
+const moments = {
+  launch: 0, boost: 0, pass: 0, sector: 0, impact: 0, finish: 0, slingshot: 0,
+  stampT: 0, lastBoosting: false, lastImpactSerial: 0, finishSeen: false,
+};
+function momentLevel(kind) {
+  return THREE.MathUtils.clamp((moments[kind] || 0) / (MOMENT_DURATION[kind] || 1), 0, 1);
+}
+function triggerMoment(kind, options = {}) {
+  if (MOMENT_DURATION[kind]) {
+    moments[kind] = Math.max(moments[kind] || 0, MOMENT_DURATION[kind]);
+  }
+  if (options.text && hud.momentStamp) {
+    hud.momentStamp.textContent = options.text;
+    hud.momentStamp.classList.toggle('danger', Boolean(options.danger));
+    hud.momentStamp.classList.add('live');
+    moments.stampT = options.hold ?? (kind === 'finish' ? 2.7 : .72);
+  }
+}
+function resetMoments() {
+  for (const kind of Object.keys(MOMENT_DURATION)) moments[kind] = 0;
+  moments.stampT = 0;
+  moments.lastBoosting = false;
+  moments.lastImpactSerial = player.impactSerial;
+  moments.finishSeen = false;
+  hud.momentStamp?.classList.remove('live', 'danger');
+  if (hud.momentStamp) hud.momentStamp.textContent = '';
+}
+function updateMoments(dt) {
+  for (const kind of Object.keys(MOMENT_DURATION)) {
+    moments[kind] = Math.max(0, moments[kind] - dt);
+  }
+  moments.stampT = Math.max(0, moments.stampT - dt);
+  if (moments.stampT <= 0) hud.momentStamp?.classList.remove('live', 'danger');
+
+  const boostEdge = player.boosting && !moments.lastBoosting;
+  if (boostEdge && player.slingshotT <= 0) {
+    triggerMoment('boost');
+    momentTone('boost');
+  }
+  moments.lastBoosting = player.boosting;
+
+  if (player.impactSerial !== moments.lastImpactSerial) {
+    moments.lastImpactSerial = player.impactSerial;
+    triggerMoment('impact');
+    momentTone('impact');
+    haptic(10);
+  }
+  if (player.finished && !moments.finishSeen) {
+    moments.finishSeen = true;
+    const rank = ranking().indexOf(player) + 1;
+    triggerMoment('finish', { text: `LINK ACQUIRED // P${rank}`, hold: 2.7 });
+    momentTone('finish');
+    haptic(18);
+  }
+}
+function handleRaceControlEvent(event) {
+  const meta = event?.meta || {};
+  if (event?.kind === 'green') {
+    triggerMoment('launch');
+    return;
+  }
+  if (event?.kind === 'rankUp') {
+    const rival = meta.rival ? ` // ${meta.rival} CLEARED` : '';
+    triggerMoment('pass', {
+      text: `P${String(meta.previous || 0).padStart(2, '0')} → P${String(meta.rank || 0).padStart(2, '0')}${rival}`,
+    });
+    momentTone('pass');
+    return;
+  }
+  if (event?.kind === 'rankDown') {
+    const rival = meta.rival ? ` // ${meta.rival} THROUGH` : '';
+    triggerMoment('pass', {
+      text: `P${String(meta.previous || 0).padStart(2, '0')} → P${String(meta.rank || 0).padStart(2, '0')}${rival}`,
+      danger: true,
+    });
+    momentTone('danger');
+    return;
+  }
+  if (event?.kind === 'sector' || event?.kind === 'final') {
+    const code = meta.code || meta.sector?.code || '';
+    const name = meta.name || meta.sector?.name || '';
+    triggerMoment('sector', { text: `SECTOR ${code}${name ? ` // ${name}` : ''}` });
+    momentTone('sector');
+  }
+}
+
 raceControl = createRaceControl({
   captionEl: hud.raceControl,
   sectors: SECTORS,
@@ -2735,6 +3134,7 @@ raceControl = createRaceControl({
   getAudioContext: () => ac,
   getDecodeContext: getNarratorDecodeContext,
   onDuck: setNarratorDuck,
+  onEvent: handleRaceControlEvent,
 });
 
 function persistSetupChoice(key, value) {
@@ -2812,13 +3212,19 @@ function showSetupMenu() {
   hud.results.classList.remove('show');
   hud.pause.classList.remove('show');
   hud.menu.classList.add('show');
-  hud.launchCue.classList.remove('live');
+  hud.launchCue.classList.remove('live', 'battle', 'ready', 'active');
+  hud.momentStamp?.classList.remove('live', 'danger');
   raceControl.reset(raceControlSnapshot());
   refreshSetupPresentation();
 }
 
 refreshSetupPresentation();
-const CRITICAL_NARRATOR_CLIPS = Object.freeze(['briefing', 'green']);
+const CRITICAL_NARRATOR_CLIPS = Object.freeze([
+  'briefing',
+  'green',
+  'slingshot.ready',
+  'slingshot.fire',
+]);
 const NARRATOR_WARM_PRIORITY = Object.freeze([
   'rank.up',
   'rank.down',
@@ -2980,6 +3386,16 @@ function updateTower() {
 }
 
 let hudClock = 0;
+function nearestWakeThreat() {
+  let threat = null;
+  for (const other of ships) {
+    if (other === player || other.finished || !other.drafting || other.draftTarget !== player) continue;
+    const gap = deltaS(other.s, player.s);
+    if (gap <= 3 || gap >= 32) continue;
+    if (!threat || gap < threat.gap) threat = { ship: other, gap };
+  }
+  return threat;
+}
 function updateHUD(dt) {
   hudClock += dt;
   if (hudClock < 0.1) return;
@@ -3009,6 +3425,22 @@ function updateHUD(dt) {
   hud.sectorName.textContent = activeSector.name;
   hud.sectorIndex.textContent = activeSector.code;
   if (state.phase === 'race') {
+    const wakeThreat = nearestWakeThreat();
+    hud.launchCue.classList.remove('live', 'battle', 'ready', 'active');
+    if (player.slingshotT > 0) {
+      hud.launchCue.textContent = `SLINGSHOT // ${player.slingshotT.toFixed(1)}S`;
+      hud.launchCue.classList.add('live', 'active');
+    } else if (player.slingshotReady) {
+      hud.launchCue.textContent = 'WAKE LOCKED // SHIFT TO SLINGSHOT';
+      hud.launchCue.classList.add('live', 'ready');
+    } else if (player.drafting) {
+      const target = player.draftTarget?.spec?.name || 'TARGET';
+      hud.launchCue.textContent = `WAKE LINK // ${target} // ${Math.round(player.draftCharge * 100)}%`;
+      hud.launchCue.classList.add('live', 'battle');
+    } else if (wakeThreat) {
+      hud.launchCue.textContent = `${wakeThreat.ship.spec.name} LINKING // ${Math.round(wakeThreat.gap)}M`;
+      hud.launchCue.classList.add('live', 'battle');
+    }
     if (state.goTimer > 0) {
       state.goTimer -= 0.1;
       hud.msg.textContent = 'GO!';
@@ -3018,15 +3450,14 @@ function updateHUD(dt) {
       state.cameraLabelT = Math.max(0, state.cameraLabelT - .1);
       const wrongWay = player.wrongWay > 1.2;
       const cameraCall = !wrongWay && state.cameraLabelT > 0;
-      const draftCall = !wrongWay && !cameraCall && player.drafting;
       hud.msg.textContent = wrongWay
         ? 'WRONG WAY'
         : (cameraCall
           ? `CAM // ${CAMERA_NAMES[state.cameraMode]}`
-          : (draftCall ? (innerWidth < 700 ? 'DRAFT' : 'DRAFT LINK') : ''));
+          : '');
       hud.msg.classList.toggle('warn', wrongWay);
       hud.msg.classList.toggle('camera', cameraCall);
-      hud.msg.classList.toggle('draft', draftCall);
+      hud.msg.classList.remove('draft');
     }
   }
   drawMinimap();
@@ -3036,7 +3467,8 @@ function showResults() {
   state.phase = 'results';
   document.body.classList.remove('race-active');
   document.body.classList.add('results-active');
-  hud.launchCue.classList.remove('live');
+  hud.launchCue.classList.remove('live', 'battle', 'ready', 'active');
+  hud.momentStamp?.classList.remove('live', 'danger');
   const driver = activeDriver();
   const difficulty = activeDifficulty();
   const previous = raceRecords[difficulty.id] || null;
@@ -3064,17 +3496,29 @@ function showResults() {
   document.getElementById('resTitle').textContent =
     rank === 1 ? 'COMPUTE CLAIMED' : `P${rank} // HELIOS ARRIVAL`;
   hud.resultsSub.textContent = rank === 1
-    ? `${driver.name} delivered OPENAI to the HELIOS array first`
-    : `${driver.name} classified OPENAI P${rank} of ${ships.length}`;
+    ? 'OPENAI reached the HELIOS array first'
+    : `OPENAI classified P${rank} of ${ships.length}`;
   const record = raceRecords[difficulty.id];
-  const tributeLabel = driver.tribute ? ' // UNOFFICIAL TRIBUTE' : '';
+  const tributeLabel = driver.tribute ? ' // UNOFFICIAL TEXT-ONLY TRIBUTE' : '';
   hud.resultsMeta.textContent = newPersonalBest
     ? `${difficulty.label} PROTOCOL${tributeLabel} // NEW PERSONAL BEST`
     : `${difficulty.label} PROTOCOL${tributeLabel} // PB ${record?.bestTime ? fmt(record.bestTime) : '—'}`;
+  const order = ranking();
+  let gapText = '';
+  if (player.finished && rank > 1 && order[0]?.finished) {
+    gapText = ` // +${Math.max(0, player.finishTime - order[0].finishTime).toFixed(2)}S`;
+  } else if (player.finished && rank === 1 && order[1]?.finished) {
+    gapText = ` // ${Math.max(0, order[1].finishTime - player.finishTime).toFixed(2)}S CLEAR`;
+  }
+  const positionsGained = ships.length - rank;
+  const movement = positionsGained > 0 ? `+${positionsGained} POSITIONS` : 'GRID HELD';
+  hud.resultsStinger.textContent =
+    `P${String(ships.length).padStart(2, '0')} → P${String(rank).padStart(2, '0')} // ${movement} // ${player.slingshots} SLINGSHOTS${gapText}`;
   hud.resultDriver.textContent = driver.name;
   hud.resultDifficulty.textContent = difficulty.label;
   hud.resultTime.textContent = player.finished ? fmt(player.finishTime) : 'DNF';
   hud.resultCores.textContent = `${player.packets} / ${DATA_CORES.length}`;
+  hud.resultSlingshots.textContent = String(player.slingshots);
   hud.results.classList.add('show');
 }
 
@@ -3101,6 +3545,7 @@ function physicsStep() {
 }
 
 const _shipM = new THREE.Matrix4(), _X = new THREE.Vector3(), _Y = new THREE.Vector3(), _Z = new THREE.Vector3();
+const _engineColor = new THREE.Color(), _engineWhite = new THREE.Color(0xffffff);
 function syncMeshes(t) {
   for (const c of ships) {
     const f = frameAt(c.s);
@@ -3117,8 +3562,13 @@ function syncMeshes(t) {
     c.mesh.position.set(c.wx + f.u[0] * bob, c.wy + f.u[1] * bob, c.wz + f.u[2] * bob);
     c.lean.rotation.z = c.roll;
     c.lean.rotation.x = c.pitch;
-    const glow = 0.55 + (c.throttle || 0) * 0.75 + (c.boosting ? 1.2 : 0) + c.padGlow * 0.9;
-    for (const m of c.engines) m.color.setRGB(0.75 * glow, 0.91 * glow, glow);
+    const slingshot = c.slingshotT > 0;
+    const glow = 0.55 + (c.throttle || 0) * 0.72 + (c.boosting ? .86 : 0) +
+      (slingshot ? .72 : 0) + c.padGlow * .72;
+    _engineColor.setHex(c.spec.color)
+      .lerp(_engineWhite, c.spec.player ? (slingshot ? .72 : .32) : .2)
+      .multiplyScalar(.56 + glow * .64);
+    for (const m of c.engines) m.color.copy(_engineColor);
     if (c.shieldMat) {
       const shieldEnergy = THREE.MathUtils.clamp(c.shield / SHIELD_MAX, 0, 1);
       c.shieldMat.opacity = c.hitWall ? .18 : (shieldEnergy < .25 ? .025 : 0);
@@ -3192,7 +3642,7 @@ function frame(now) {
     hud.msg.classList.remove('warn');
     hud.msg.textContent = n > 0 ? String(n) : 'GO!';
     if (state.countdown <= 0.2 && state.phase === 'countdown') { state.phase = 'race'; state.goTimer = 1.2; }
-  } else {
+  } else if (state.phase !== 'race') {
     hud.launchCue.classList.remove('live');
   }
   const running = state.phase === 'race' || state.phase === 'countdown';
@@ -3202,9 +3652,11 @@ function frame(now) {
     if (state.phase === 'race' && player.finished) {
       if (state.finishDelay < 0) state.finishDelay = 0;
       state.finishDelay += dt;
-      resultsReady = state.finishDelay >= 4.2 || ships.every(c => c.finished);
+      resultsReady = state.finishDelay >= 3 &&
+        (state.finishDelay >= 4.2 || ships.every(c => c.finished));
     }
   }
+  updateMoments(dt);
   syncMeshes(t);
   for (const c of ships) updateTrail(c, dt);
   updateParticles(dt);
@@ -3222,8 +3674,16 @@ function frame(now) {
   earthDynamic.materials.forEach(m => {
     if (m.uniforms.uTime) m.uniforms.uTime.value = t;
   });
-  if (heliosDynamic.ring) heliosDynamic.ring.rotation.z = t * .08;
-  if (heliosDynamic.inner) heliosDynamic.inner.rotation.z = -t * .17;
+  const heliosFx = renderProfile.reducedMotion ? 0 : momentLevel('finish');
+  if (heliosDynamic.ring) heliosDynamic.ring.rotation.z = t * (.08 + heliosFx * .42);
+  if (heliosDynamic.inner) heliosDynamic.inner.rotation.z = -t * (.17 + heliosFx * .7);
+  if (heliosDynamic.ringEnergy) {
+    heliosDynamic.ringEnergy.material.opacity = .92 + heliosFx * .08;
+    heliosDynamic.ringEnergy.scale.setScalar(1 + Math.sin(t * 7) * heliosFx * .028);
+  }
+  if (heliosDynamic.glow) heliosDynamic.glow.material.opacity = .16 + heliosFx * .18;
+  if (heliosDynamic.beacon) heliosDynamic.beacon.intensity = 9 + heliosFx * 28;
+  if (heliosDynamic.beam) heliosDynamic.beam.material.opacity = .075 + heliosFx * .1;
   heliosDynamic.panels.forEach((panel, i) => {
     panel.rotation.y = Math.sin(t * .16 + i * Math.PI) * .12;
   });
@@ -3241,7 +3701,7 @@ function frame(now) {
     m.color.setRGB(0.16 * s, 0.6 * s, 0.85 * s); // deep cyan even at peak — never blows white
   });
   if (running || testMode) updateHUD(dt);
-  post.dynamics(t, Math.hypot(player.vA, player.vL), player.boosting, player.hitWall);
+  post.dynamics(t, Math.hypot(player.vA, player.vL), player.boosting, player.hitWall, moments);
   renderFrame();
   monitorRenderPerformance(dt);
 }
@@ -3290,7 +3750,7 @@ const testApi = {
     earthDynamic.materials.forEach(m => {
       if (m.uniforms.uTime) m.uniforms.uTime.value = t;
     });
-    post.dynamics(t, Math.hypot(player.vA, player.vL), player.boosting, player.hitWall);
+    post.dynamics(t, Math.hypot(player.vA, player.vL), player.boosting, player.hitWall, moments);
     renderFrame();
   },
   ndcOfPlayer() {
@@ -3306,13 +3766,29 @@ const testApi = {
       raceTime: state.raceTime,
       speed: Math.hypot(player.vA, player.vL), vA: player.vA, vL: player.vL,
       shield: player.shield, boost: player.boost, boosting: player.boosting, limp: player.limp,
-      packets: player.packets, drafting: player.drafting, cameraMode: state.cameraMode,
+      boostLockout: player.boostLockout, damageCooldown: player.damageCooldown,
+      cleanRun: player.cleanRun,
+      packets: player.packets, drafting: player.drafting,
+      draftCharge: player.draftCharge,
+      draftTarget: player.draftTarget?.spec?.name || null,
+      slingshotReady: player.slingshotReady,
+      slingshotT: player.slingshotT,
+      slingshotCooldown: player.slingshotCooldown,
+      slingshotSerial: player.slingshotSerial,
+      slingshots: player.slingshots,
+      cameraMode: state.cameraMode,
       lap: player.lap, lapProgress: player.lapProgress, progress: player.progress,
-      hitWall: !!player.hitWall, finished: player.finished,
+      hitWall: !!player.hitWall, finished: player.finished, finishTime: player.finishTime,
       wx: player.wx, wy: player.wy, wz: player.wz,
       ships: ships.map(c => ({
         name: c.spec.name, lap: c.lap, progress: c.progress,
         speed: Math.hypot(c.vA, c.vL), lat: c.lat, shield: c.shield, boost: c.boost,
+        boosting: c.boosting, limp: c.limp, boostLockout: c.boostLockout,
+        damageCooldown: c.damageCooldown, cleanRun: c.cleanRun,
+        drafting: c.drafting, draftCharge: c.draftCharge,
+        slingshotReady: c.slingshotReady, slingshotT: c.slingshotT,
+        slingshotCooldown: c.slingshotCooldown,
+        slingshotSerial: c.slingshotSerial, slingshots: c.slingshots,
       })),
     };
   },
@@ -3331,6 +3807,10 @@ const testApi = {
     };
   },
   reset() { resetRace(); },
+  armSlingshot() {
+    player.boost = Math.max(player.boost, SLINGSHOT_COST + 2);
+    return armSlingshot(player);
+  },
   autopilot(on) { state.autopilot = !!on; },
   tickFx(dt) { updateParticles(dt); for (const c of ships) updateTrail(c, dt); },
   audio() {
@@ -3339,6 +3819,7 @@ const testApi = {
       built: true, ctxState: ac.state, workletUp: !!engineNode,
       freq: engineNode ? engineNode.parameters.get('freq').value : 0,
       engineGain: engineGain.gain.value, master: masterGain.gain.value,
+      bed: bedGain?.gain.value ?? 0, moment: momentGain?.gain.value ?? 0,
       aiVoices: aiVoices.length,
     };
   },

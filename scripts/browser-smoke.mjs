@@ -52,9 +52,80 @@ await page.waitForFunction(
 const criticalNarratorStartLatencyMs = await page.evaluate(
   () => window.__aiRace.raceControl().audioCache.lastDecodedStartLatencyMs,
 );
+const slingshot = await page.evaluate(() => {
+  const race = window.__aiRace;
+  const feedback = selector => {
+    const element = document.querySelector(selector);
+    const bounds = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      text: element.textContent || '',
+      classes: [...element.classList],
+      visible: style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        Number(style.opacity) > 0,
+      rect: {
+        top: bounds.top,
+        bottom: bounds.bottom,
+        left: bounds.left,
+        right: bounds.right,
+      },
+    };
+  };
+
+  race.testMode(true);
+  race.skipCountdown();
+  race.autopilot(false);
+  race.setInput({ steer: 0, throttle: 0, brake: 0, airbrake: 0, boost: 0 });
+  race.teleport(race.track.length * .21, 0, 0, 60);
+  race.step(2);
+  const before = race.state();
+  const armed = race.armSlingshot();
+  race.renderOnce();
+  const readyCue = feedback('#launchCue');
+
+  race.setInput({ steer: 0, throttle: 1, brake: 0, airbrake: 0, boost: 1 });
+  race.step(6);
+  race.renderOnce();
+  return {
+    armed,
+    beforeSerial: before.slingshotSerial,
+    beforeCount: before.slingshots,
+    attackSpeed: before.speed,
+    state: race.state(),
+    readyCue,
+    activeCue: feedback('#launchCue'),
+    moment: feedback('#momentStamp'),
+  };
+});
+await page.waitForFunction(() => {
+  const cue = document.querySelector('#launchCue');
+  const stamp = document.querySelector('#momentStamp');
+  return cue?.classList.contains('active') &&
+    stamp?.classList.contains('live') &&
+    Number(getComputedStyle(cue).opacity) > .8 &&
+    Number(getComputedStyle(stamp).opacity) > .8;
+}, null, { timeout: 2_000 });
+Object.assign(slingshot, await page.evaluate(() => {
+  const feedback = selector => {
+    const element = document.querySelector(selector);
+    const style = getComputedStyle(element);
+    return {
+      text: element.textContent || '',
+      classes: [...element.classList],
+      visible: style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        Number(style.opacity) > .8,
+    };
+  };
+  return {
+    activeCue: feedback('#launchCue'),
+    moment: feedback('#momentStamp'),
+  };
+}));
+await page.screenshot({ path: '.qa/slingshot.png' });
 await page.evaluate(() => {
-  window.__aiRace.testMode(true);
-  window.__aiRace.skipCountdown();
+  window.__aiRace.setInput({ steer: 0, throttle: 0, brake: 0, airbrake: 0, boost: 0 });
   window.__aiRace.autopilot(true);
   window.__aiRace.step(2_200);
   window.__aiRace.renderOnce();
@@ -79,6 +150,10 @@ const raced = await page.evaluate(() => {
       meta: document.querySelector('#resultsMeta')?.textContent || '',
       driver: document.querySelector('#resultDriver')?.textContent || '',
       protocol: document.querySelector('#resultDifficulty')?.textContent || '',
+      stinger: document.querySelector('#resultsStinger')?.textContent || '',
+      slingshots: document.querySelector('#resultSlingshots')?.textContent || '',
+      hasStinger: Boolean(document.querySelector('#resultsStinger')),
+      hasSlingshotStat: Boolean(document.querySelector('.resultStat.slingshotStat')),
       playerRow: document.querySelector('tr.you')?.textContent || '',
     },
     finishCaption: {
@@ -109,7 +184,7 @@ if (initial.track.length < 2_600) errors.push(`track too short: ${initial.track.
 if (initial.track.halfWidth < 11) errors.push(`track too narrow: ${initial.track.halfWidth}`);
 if (!raced.finished) errors.push('player did not complete the orbital sprint');
 if (!raced.ships.every(ship => Number.isFinite(ship.speed))) errors.push('non-finite rival telemetry');
-if (raced.audioCache.decoded < 2 || raced.audioCache.fetches > 29) {
+if (raced.audioCache.decoded < 2 || raced.audioCache.fetches > 31) {
   errors.push(`narrator cache not warm: ${JSON.stringify(raced.audioCache)}`);
 }
 if (menuNarratorCache.decoded < 2) {
@@ -118,13 +193,41 @@ if (menuNarratorCache.decoded < 2) {
 if (!Number.isFinite(criticalNarratorStartLatencyMs) || criticalNarratorStartLatencyMs > 100) {
   errors.push(`critical narrator start path too slow: ${criticalNarratorStartLatencyMs}ms`);
 }
-if (!/SAM ALTMAN/.test(raced.results.subtitle) ||
-    !/APEX/.test(raced.results.meta) ||
-    !/UNOFFICIAL TRIBUTE/.test(raced.results.meta) ||
+if (!slingshot.armed ||
+    slingshot.state.slingshotSerial !== slingshot.beforeSerial + 1 ||
+    slingshot.state.slingshots !== slingshot.beforeCount + 1 ||
+    slingshot.state.slingshotT <= 0 ||
+    slingshot.attackSpeed < 55 ||
+    slingshot.state.speed < 55) {
+  errors.push(`slingshot did not fire exactly once: ${JSON.stringify(slingshot)}`);
+}
+if (!slingshot.readyCue.visible ||
+    !slingshot.readyCue.classes.includes('ready') ||
+    !/WAKE LOCKED/.test(slingshot.readyCue.text)) {
+  errors.push(`slingshot ready cue missing: ${JSON.stringify(slingshot.readyCue)}`);
+}
+if (!slingshot.activeCue.visible ||
+    !slingshot.activeCue.classes.includes('active') ||
+    !/SLINGSHOT/.test(slingshot.activeCue.text) ||
+    !slingshot.moment.visible ||
+    !slingshot.moment.classes.includes('live') ||
+    !/SLINGSHOT DEPLOYED/.test(slingshot.moment.text)) {
+  errors.push(`slingshot feedback missing: ${JSON.stringify(slingshot)}`);
+}
+if (raced.results.subtitle.includes('SAM ALTMAN') ||
+    !/^OPENAI (?:reached the HELIOS array first|classified P\d+ of \d+)$/.test(raced.results.subtitle) ||
+    !raced.results.meta.startsWith('APEX PROTOCOL // UNOFFICIAL TEXT-ONLY TRIBUTE // ') ||
     raced.results.driver !== 'SAM ALTMAN' ||
     raced.results.protocol !== 'APEX' ||
     !/OPENAI \/ SAM ALTMAN/.test(raced.results.playerRow)) {
   errors.push(`identity-aware results failed: ${JSON.stringify(raced.results)}`);
+}
+if (!raced.results.hasStinger ||
+    !raced.results.hasSlingshotStat ||
+    !/P12 → P\d{2} \/\/ .+ \/\/ \d+ SLINGSHOTS/.test(raced.results.stinger) ||
+    !/^\d+$/.test(raced.results.slingshots) ||
+    Number(raced.results.slingshots) < 1) {
+  errors.push(`results payoff missing: ${JSON.stringify(raced.results)}`);
 }
 if (!raced.finishCaption.live || !raced.finishCaption.visible || !raced.finishCaption.aboveResults) {
   errors.push(`finish caption hidden at results boundary: ${JSON.stringify(raced.finishCaption)}`);
@@ -133,7 +236,7 @@ if (!/HELIOS|Compute claimed/i.test(raced.finishCaption.text)) {
   errors.push(`finish caption missing classification: ${raced.finishCaption.text}`);
 }
 if (errors.length) {
-  console.error(JSON.stringify({ initial, setup, raced, errors }, null, 2));
+  console.error(JSON.stringify({ initial, setup, slingshot, raced, errors }, null, 2));
   await browser.close();
   process.exit(1);
 }
@@ -145,9 +248,10 @@ console.log(JSON.stringify({
   setup: `${setup.state.driver}/${setup.state.difficulty}`,
   criticalNarratorStartLatencyMs: Math.round(criticalNarratorStartLatencyMs),
   decodedNarratorClips: raced.audioCache.decoded,
+  slingshots: Number(raced.results.slingshots),
   playerFinished: raced.finished,
   classificationFinished: raced.ships.filter(ship => ship.lap >= 1).length,
   errors,
-  screenshots: ['.qa/menu.png', '.qa/race.png', '.qa/results.png'],
+  screenshots: ['.qa/menu.png', '.qa/slingshot.png', '.qa/race.png', '.qa/results.png'],
 }, null, 2));
 await browser.close();

@@ -5,22 +5,43 @@ import {
   RaceControlDirector,
 } from '../race-control.js';
 
-for (const source of Object.values(DEFAULT_RACE_CONTROL_CLIPS)) {
-  await access(new URL(`../${source}`, import.meta.url));
+for (const [clipId, descriptor] of Object.entries(DEFAULT_RACE_CONTROL_CLIPS)) {
+  assert.equal(typeof descriptor, 'object', `${clipId} uses an authored clip descriptor`);
+  assert.equal(typeof descriptor.src, 'string', `${clipId} descriptor exposes its source`);
+  assert.equal(typeof descriptor.text, 'string', `${clipId} descriptor exposes its exact caption`);
+  assert.doesNotMatch(descriptor.text, /Sam Altman/i, `${clipId} narration stays entrant-only`);
+}
+
+function assertResolvedClipMatches(control, item, message) {
+  const descriptor = control._resolveClip(item);
+  assert.ok(descriptor, `${message}: a baked descriptor resolves`);
+  assert.equal(descriptor.text, item.text, `${message}: baked speech and caption stay aligned`);
 }
 
 {
   const control = new RaceControlDirector();
+  const pass = {
+    clipId: 'rank.up.2.ANTHROPIC',
+    kind: 'rankUp',
+    text: DEFAULT_RACE_CONTROL_CLIPS['rank.up'].text,
+  };
+  const classification = {
+    clipId: 'finish.loss.7',
+    kind: 'finish',
+    text: DEFAULT_RACE_CONTROL_CLIPS['finish.loss'].text,
+  };
   assert.equal(
-    control._resolveClip({ clipId: 'rank.up.2.ANTHROPIC', kind: 'rankUp' }),
+    control._resolveClip(pass),
     DEFAULT_RACE_CONTROL_CLIPS['rank.up'],
     'dynamic pass calls use the baked rank-up fallback',
   );
   assert.equal(
-    control._resolveClip({ clipId: 'finish.loss.7', kind: 'finish' }),
+    control._resolveClip(classification),
     DEFAULT_RACE_CONTROL_CLIPS['finish.loss'],
     'dynamic classifications use the baked finish fallback',
   );
+  assertResolvedClipMatches(control, pass, 'dynamic pass fallback');
+  assertResolvedClipMatches(control, classification, 'dynamic classification fallback');
   control.dispose();
 }
 
@@ -248,7 +269,12 @@ const calls = [];
 let finishCurrent = null;
 let cancellations = 0;
 const transport = (item, finish) => {
-  calls.push({ kind: item.kind, text: item.text });
+  calls.push({
+    kind: item.kind,
+    text: item.text,
+    clipId: item.clipId,
+    meta: item.meta,
+  });
   finishCurrent = finish;
   return () => { cancellations++; };
 };
@@ -272,6 +298,10 @@ const snapshot = ({
   drafting = false,
   shield = 100,
   impactSerial = 0,
+  slingshotReady = false,
+  slingshotReadySerial = 0,
+  slingshotSerial = 0,
+  draftTarget = null,
   finished = false,
 } = {}) => ({
   time,
@@ -284,6 +314,10 @@ const snapshot = ({
     drafting,
     shield,
     impactSerial,
+    slingshotReady,
+    slingshotReadySerial,
+    slingshotSerial,
+    draftTarget,
     hitWall: false,
     finished,
   },
@@ -307,7 +341,7 @@ finishCurrent();
 
 director.update(snapshot({ time: 1.3 }));
 assert.equal(calls.at(-1).kind, 'leader');
-assert.match(calls.at(-1).text, /Anthropic establishes the early lead/);
+assert.equal(calls.at(-1).text, DEFAULT_RACE_CONTROL_CLIPS['leader.ANTHROPIC'].text);
 finishCurrent();
 
 director.update(snapshot({ time: 2, leader: 'OPENAI', rank: 1 }));
@@ -335,8 +369,32 @@ assert.equal(calls.at(-1).kind, 'finish');
 assert.match(calls.at(-1).text, /Compute claimed/);
 assert.ok(cancellations >= 1, 'priority finish cancels an in-flight lower-priority call');
 assert.ok(director.inspect().queued.every(item => item.kind === 'finish'), 'finish suppresses stale race calls');
+for (const call of director.inspect().history) {
+  assertResolvedClipMatches(director, call, `primary scenario call ${call.id}`);
+}
 
 director.dispose();
+
+// Countdown time is frozen at zero, so the green call must explicitly bypass
+// the briefing's default 4.1-second simulation-time spacing window.
+{
+  const transitionCalls = [];
+  let transitionCancel = 0;
+  const transition = new RaceControlDirector({
+    transport: (item, done) => {
+      transitionCalls.push({ ...item, done });
+      return () => { transitionCancel++; };
+    },
+  });
+  transition.reset(snapshot({ phase: 'countdown' }));
+  assert.equal(transition.inspect().current?.kind, 'briefing');
+  transition.update(snapshot({ time: 0.01, phase: 'race' }));
+  assert.equal(transition.inspect().current?.kind, 'green', 'green starts on the phase transition');
+  assert.equal(transitionCalls.at(-1).kind, 'green');
+  assert.ok(transitionCancel >= 1, 'green interrupts a briefing that is still transmitting');
+  assertResolvedClipMatches(transition, transitionCalls.at(-1), 'immediate green call');
+  transition.dispose();
+}
 
 // Priority interrupts bypass the normal spacing window after cancelling a
 // lower-priority transmission.
@@ -365,6 +423,7 @@ director.dispose();
 
 function scenario(start = {}) {
   const spoken = [];
+  const events = [];
   const ducking = [];
   let finish = null;
   const control = new RaceControlDirector({
@@ -373,8 +432,14 @@ function scenario(start = {}) {
     rankStableFor: 0.72,
     draftStableFor: 0.7,
     onDuck: value => ducking.push(value),
+    onEvent: item => events.push({ kind: item.kind, meta: item.meta }),
     transport: (item, done) => {
-      spoken.push({ kind: item.kind, text: item.text });
+      spoken.push({
+        kind: item.kind,
+        text: item.text,
+        clipId: item.clipId,
+        meta: item.meta,
+      });
       finish = done;
       return () => {};
     },
@@ -388,7 +453,7 @@ function scenario(start = {}) {
   end();
   control.update(snapshot({ time: 0.01, ...start }));
   end();
-  return { control, spoken, ducking, end };
+  return { control, spoken, events, ducking, end };
 }
 
 // Player position calls wait for a stable rank, then name the pass/loss.
@@ -397,11 +462,19 @@ function scenario(start = {}) {
   s.control.update(snapshot({ time: 0.8, rank: 2 }));
   s.control.update(snapshot({ time: 1.55, rank: 2 }));
   s.end();
-  assert.ok(s.spoken.some(call => call.kind === 'rankUp' && /P two/.test(call.text)));
+  assert.ok(s.spoken.some(call =>
+    call.kind === 'rankUp' &&
+    call.text === DEFAULT_RACE_CONTROL_CLIPS['rank.up'].text));
+  assert.ok(s.events.some(event => event.kind === 'rankUp'), 'host moment callback receives rank-up metadata');
   s.control.update(snapshot({ time: 2, rank: 3 }));
   s.control.update(snapshot({ time: 2.75, rank: 3 }));
   s.end();
-  assert.ok(s.spoken.some(call => call.kind === 'rankDown' && /drops to P three/.test(call.text)));
+  assert.ok(s.spoken.some(call =>
+    call.kind === 'rankDown' &&
+    call.text === DEFAULT_RACE_CONTROL_CLIPS['rank.down'].text));
+  for (const call of s.control.inspect().history) {
+    assertResolvedClipMatches(s.control, call, `position call ${call.id}`);
+  }
   s.control.dispose();
 }
 
@@ -414,6 +487,11 @@ function scenario(start = {}) {
   assert.ok(s.spoken.some(call => call.kind === 'draft'));
 
   s.control.update(snapshot({ time: 2, packets: 2, shield: 72, impactSerial: 1 }));
+  assert.equal(
+    s.spoken.at(-1).kind,
+    'impact',
+    'same-snapshot detectors batch before the higher-priority impact is selected',
+  );
   while (s.control.inspect().current) s.end();
   assert.ok(s.spoken.some(call => call.kind === 'core'));
   assert.ok(s.spoken.some(call => call.kind === 'impact'));
@@ -424,6 +502,82 @@ function scenario(start = {}) {
   s.control.update(snapshot({ time: 4, packets: 2, shield: 0, impactSerial: 1 }));
   while (s.control.inspect().current) s.end();
   assert.ok(s.spoken.some(call => call.kind === 'shieldGone'));
+  for (const call of s.control.inspect().history) {
+    assertResolvedClipMatches(s.control, call, `status call ${call.id}`);
+  }
+  s.control.dispose();
+}
+
+// Slingshot readiness and deployment are serial-edge events. A held ready
+// state cannot chatter, and deployment pre-empts lower-priority radio traffic.
+{
+  const s = scenario();
+  s.control.update(snapshot({
+    time: 0.4,
+    slingshotReady: true,
+    slingshotReadySerial: 1,
+    draftTarget: 'ANTHROPIC',
+  }));
+  assert.equal(s.spoken.at(-1).kind, 'slingshotReady');
+  assert.equal(
+    s.spoken.at(-1).text,
+    'Wake lock complete. Slingshot is armed.',
+  );
+  assert.equal(s.spoken.at(-1).meta.target, 'ANTHROPIC');
+  s.end();
+  const readyCount = s.spoken.filter(call => call.kind === 'slingshotReady').length;
+  s.control.update(snapshot({
+    time: 0.8,
+    slingshotReady: true,
+    slingshotReadySerial: 1,
+    draftTarget: 'ANTHROPIC',
+  }));
+  assert.equal(
+    s.spoken.filter(call => call.kind === 'slingshotReady').length,
+    readyCount,
+    'a held ready serial does not repeat',
+  );
+
+  s.control.emit({
+    id: 'slingshot-blocker',
+    kind: 'draft',
+    text: DEFAULT_RACE_CONTROL_CLIPS.draft.text,
+    clipId: 'draft',
+    priority: 58,
+    createdAt: 0.8,
+    expiresAt: 4,
+  });
+  assert.equal(s.control.inspect().current?.kind, 'draft');
+  s.control.update(snapshot({
+    time: 1,
+    slingshotReady: false,
+    slingshotReadySerial: 1,
+    slingshotSerial: 1,
+    draftTarget: 'ANTHROPIC',
+  }));
+  assert.equal(s.control.inspect().current?.kind, 'slingshotFire');
+  assert.equal(
+    s.spoken.at(-1).text,
+    'Slingshot deployed. OpenAI is coming through.',
+  );
+  assert.equal(s.spoken.at(-1).meta.target, 'ANTHROPIC');
+  s.end();
+  const fireCount = s.spoken.filter(call => call.kind === 'slingshotFire').length;
+  s.control.update(snapshot({
+    time: 1.2,
+    slingshotReady: false,
+    slingshotReadySerial: 1,
+    slingshotSerial: 1,
+    draftTarget: 'ANTHROPIC',
+  }));
+  assert.equal(
+    s.spoken.filter(call => call.kind === 'slingshotFire').length,
+    fireCount,
+    'a held deployment serial does not repeat',
+  );
+  for (const call of s.control.inspect().history) {
+    assertResolvedClipMatches(s.control, call, `slingshot call ${call.id}`);
+  }
   s.control.dispose();
 }
 
@@ -439,6 +593,9 @@ function scenario(start = {}) {
   s.control.update(snapshot({ time: 8, progress: 0.92 }));
   while (s.control.inspect().current) s.end();
   assert.ok(s.spoken.some(call => call.kind === 'final' && call.text.includes('HELIOS is awake')));
+  for (const call of s.control.inspect().history) {
+    assertResolvedClipMatches(s.control, call, `sector call ${call.id}`);
+  }
   s.control.dispose();
 }
 
@@ -447,8 +604,10 @@ function scenario(start = {}) {
   const s = scenario({ rank: 3 });
   s.control.update(snapshot({ time: 2, phase: 'results', rank: 3, progress: 1, finished: true }));
   assert.equal(s.spoken.at(-1).kind, 'finish');
-  assert.match(s.spoken.at(-1).text, /finishes P three/);
-  assert.match(s.spoken.at(-1).text, /Anthropic/);
+  assert.equal(s.spoken.at(-1).text, DEFAULT_RACE_CONTROL_CLIPS['finish.loss'].text);
+  assert.equal(s.spoken.at(-1).meta.rank, 3);
+  assert.equal(s.spoken.at(-1).meta.winner, 'ANTHROPIC');
+  assertResolvedClipMatches(s.control, s.spoken.at(-1), 'non-winning finish');
   s.control.dispose();
 }
 
@@ -484,6 +643,14 @@ function scenario(start = {}) {
   s.control.update(snapshot({ time: 1 }));
   assert.ok(!s.control.inspect().queued.some(call => call.id === 'stale-rank'));
   s.control.dispose();
+}
+
+// Keep this last so director behavior remains testable while a newly authored
+// clip is waiting to be baked. Release verification still fails closed when a
+// manifest source is absent.
+for (const [clipId, descriptor] of Object.entries(DEFAULT_RACE_CONTROL_CLIPS)) {
+  await access(new URL(`../${descriptor.src}`, import.meta.url));
+  assert.ok(descriptor.text.length > 0, `${clipId} has authored caption text`);
 }
 
 console.log('RACE CONTROL OK');

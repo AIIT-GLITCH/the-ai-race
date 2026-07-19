@@ -17,36 +17,88 @@
  */
 
 const CLIP_ROOT = 'assets/race-control';
+const authoredClip = (file, text) => Object.freeze({
+  src: `${CLIP_ROOT}/${file}`,
+  text,
+});
+
 export const DEFAULT_RACE_CONTROL_CLIPS = Object.freeze({
-  briefing: `${CLIP_ROOT}/briefing.mp3`,
-  green: `${CLIP_ROOT}/green.mp3`,
-  'leader.OPENAI': `${CLIP_ROOT}/leader-openai.mp3`,
-  'leader.ANTHROPIC': `${CLIP_ROOT}/leader-anthropic.mp3`,
-  'leader.DEEPMIND': `${CLIP_ROOT}/leader-deepmind.mp3`,
-  'leader.xAI': `${CLIP_ROOT}/leader-xai.mp3`,
-  'leader.META': `${CLIP_ROOT}/leader-meta.mp3`,
-  'leader.DEEPSEEK': `${CLIP_ROOT}/leader-deepseek.mp3`,
-  'leader.MISTRAL': `${CLIP_ROOT}/leader-mistral.mp3`,
-  'leader.QWEN': `${CLIP_ROOT}/leader-qwen.mp3`,
-  'leader.MOONSHOT': `${CLIP_ROOT}/leader-moonshot.mp3`,
-  'leader.COHERE': `${CLIP_ROOT}/leader-cohere.mp3`,
-  'leader.MINIMAX': `${CLIP_ROOT}/leader-minimax.mp3`,
-  'leader.MICROSOFT': `${CLIP_ROOT}/leader-microsoft.mp3`,
-  'rank.up': `${CLIP_ROOT}/rank-up.mp3`,
-  'rank.down': `${CLIP_ROOT}/rank-down.mp3`,
-  draft: `${CLIP_ROOT}/draft.mp3`,
-  core: `${CLIP_ROOT}/core.mp3`,
-  'core.8': `${CLIP_ROOT}/core-8.mp3`,
-  impact: `${CLIP_ROOT}/impact.mp3`,
-  'shield.low': `${CLIP_ROOT}/shield-low.mp3`,
-  'shield.gone': `${CLIP_ROOT}/shield-gone.mp3`,
-  'sector.02': `${CLIP_ROOT}/sector-02.mp3`,
-  'sector.03': `${CLIP_ROOT}/sector-03.mp3`,
-  'sector.04': `${CLIP_ROOT}/sector-04.mp3`,
-  'sector.05': `${CLIP_ROOT}/sector-05.mp3`,
-  'sector.06': `${CLIP_ROOT}/sector-06.mp3`,
-  'finish.win': `${CLIP_ROOT}/finish-win.mp3`,
-  'finish.loss': `${CLIP_ROOT}/finish-loss.mp3`,
+  briefing: authoredClip(
+    'briefing.mp3',
+    'Orbital race control online. Twelve labs cleared for launch.',
+  ),
+  green: authoredClip(
+    'green.mp3',
+    'Launch confirmed. The race to HELIOS is on.',
+  ),
+  'leader.OPENAI': authoredClip(
+    'leader-openai.mp3',
+    'OpenAI takes command of the orbital sprint.',
+  ),
+  'leader.ANTHROPIC': authoredClip('leader-anthropic.mp3', 'Anthropic takes the lead.'),
+  'leader.DEEPMIND': authoredClip('leader-deepmind.mp3', 'DeepMind takes the lead.'),
+  'leader.xAI': authoredClip('leader-xai.mp3', 'xAI takes the lead.'),
+  'leader.META': authoredClip('leader-meta.mp3', 'Meta takes the lead.'),
+  'leader.DEEPSEEK': authoredClip('leader-deepseek.mp3', 'DeepSeek takes the lead.'),
+  'leader.MISTRAL': authoredClip('leader-mistral.mp3', 'Mistral takes the lead.'),
+  'leader.QWEN': authoredClip('leader-qwen.mp3', 'Qwen takes the lead.'),
+  'leader.MOONSHOT': authoredClip('leader-moonshot.mp3', 'Moonshot takes the lead.'),
+  'leader.COHERE': authoredClip('leader-cohere.mp3', 'Cohere takes the lead.'),
+  'leader.MINIMAX': authoredClip('leader-minimax.mp3', 'MiniMax takes the lead.'),
+  'leader.MICROSOFT': authoredClip('leader-microsoft.mp3', 'Microsoft takes the lead.'),
+  'rank.up': authoredClip('rank-up.mp3', 'OpenAI is charging through the field.'),
+  'rank.down': authoredClip('rank-down.mp3', 'OpenAI loses a position. Time to answer back.'),
+  draft: authoredClip('draft.mp3', 'Draft link established. Burst charge is climbing.'),
+  'slingshot.ready': authoredClip(
+    'slingshot-ready.mp3',
+    'Wake lock complete. Slingshot is armed.',
+  ),
+  'slingshot.fire': authoredClip(
+    'slingshot-fire.mp3',
+    'Slingshot deployed. OpenAI is coming through.',
+  ),
+  core: authoredClip('core.mp3', 'Data core secured. Burst and shields replenished.'),
+  'core.8': authoredClip(
+    'core-8.mp3',
+    'Every data core secured. OpenAI has a full inference payload.',
+  ),
+  impact: authoredClip('impact.mp3', 'Contact. OpenAI shield is holding.'),
+  'shield.low': authoredClip(
+    'shield-low.mp3',
+    'Thermal shield critical. Keep it off the barriers.',
+  ),
+  'shield.gone': authoredClip(
+    'shield-gone.mp3',
+    'Shield failure. OpenAI is in limp mode. Clean line, now.',
+  ),
+  'sector.02': authoredClip(
+    'sector-02.mp3',
+    'Sector two. Karman Climb. The field goes to full thrust.',
+  ),
+  'sector.03': authoredClip(
+    'sector-03.mp3',
+    'Sector three. Lunar Slingshot. Momentum is everything here.',
+  ),
+  'sector.04': authoredClip(
+    'sector-04.mp3',
+    'Sector four. Dark-Side Switchback. No sunlight, no margin.',
+  ),
+  'sector.05': authoredClip(
+    'sector-05.mp3',
+    'Sector five. Quantum Data Stream. The racing line is wide open.',
+  ),
+  'sector.06': authoredClip(
+    'sector-06.mp3',
+    'Final approach. HELIOS is awake. Every position is live.',
+  ),
+  'finish.win': authoredClip(
+    'finish-win.mp3',
+    'Compute claimed! OpenAI wins the race to HELIOS!',
+  ),
+  'finish.loss': authoredClip(
+    'finish-loss.mp3',
+    'HELIOS reached. OpenAI is classified. The race is complete.',
+  ),
 });
 
 const DEFAULT_SECTORS = Object.freeze([
@@ -65,6 +117,8 @@ const PRIORITY = Object.freeze({
   rankUp: 79,
   rankDown: 81,
   draft: 58,
+  slingshotReady: 78,
+  slingshotFire: 90,
   core: 76,
   impact: 84,
   shieldLow: 91,
@@ -81,6 +135,8 @@ const COOLDOWN = Object.freeze({
   rankUp: 5.5,
   rankDown: 5.5,
   draft: 11,
+  slingshotReady: 8,
+  slingshotFire: 6,
   core: 3.8,
   impact: 7,
   shieldLow: 18,
@@ -97,6 +153,8 @@ const STALE_AFTER = Object.freeze({
   rankUp: 7,
   rankDown: 7,
   draft: 6,
+  slingshotReady: 4,
+  slingshotFire: 5,
   core: 8,
   impact: 3.2,
   shieldLow: 8,
@@ -106,26 +164,8 @@ const STALE_AFTER = Object.freeze({
   finish: 60,
 });
 
-const POSITION_WORDS = Object.freeze([
-  'zero', 'one', 'two', 'three', 'four', 'five', 'six',
-  'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
-]);
-
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
-}
-
-function hashString(value) {
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function pick(lines, key) {
-  return lines[hashString(String(key)) % lines.length];
 }
 
 function spokenLab(name = '') {
@@ -144,10 +184,6 @@ function speechText(text) {
   return String(text)
     .replace(/\bOpenAI\b/gi, 'Open A I')
     .replace(/\bxAI\b/g, 'x A I');
-}
-
-function pWord(rank) {
-  return `P ${POSITION_WORDS[rank] || String(rank)}`;
 }
 
 function estimateSpeechMs(text) {
@@ -181,7 +217,8 @@ function defaultTimer(fn, delay) {
  * {
  *   phase, time, progress,
  *   player: { rank, packets, drafting, shield, limp, hitWall,
- *             impactSerial, finished },
+ *             impactSerial, slingshotReady, slingshotReadySerial,
+ *             slingshotSerial, draftTarget, finished },
  *   order: [{ name, progress, finished, finishTime }]
  * }
  */
@@ -193,6 +230,7 @@ export class RaceControlDirector {
     this.clipManifest = options.clipManifest || DEFAULT_RACE_CONTROL_CLIPS;
     this.sectors = [...(options.sectors || DEFAULT_SECTORS)].sort((a, b) => a.f - b.f);
     this.onDuck = options.onDuck || (() => {});
+    this.onEvent = options.onEvent || (() => {});
     this.getAudioContext = options.getAudioContext || (() => null);
     this.getDecodeContext = options.getDecodeContext || this.getAudioContext;
     this.speech = options.speech ?? globalThis.speechSynthesis ?? null;
@@ -234,6 +272,7 @@ export class RaceControlDirector {
     };
     this.currentRequestedAt = null;
     this._token = 0;
+    this._batchingUpdate = false;
     this._resetDetection();
   }
 
@@ -245,6 +284,8 @@ export class RaceControlDirector {
     this.prevPackets = snapshot?.player?.packets || 0;
     this.prevDrafting = Boolean(snapshot?.player?.drafting);
     this.draftSince = this.prevDrafting ? this.now : null;
+    this.prevSlingshotReadySerial = snapshot?.player?.slingshotReadySerial || 0;
+    this.prevSlingshotSerial = snapshot?.player?.slingshotSerial || 0;
     this.prevShield = snapshot?.player?.shield ?? 100;
     this.lowShieldCalled = this.prevShield < 25;
     this.shieldGoneCalled = this.prevShield <= 0;
@@ -268,7 +309,7 @@ export class RaceControlDirector {
     this.emit(makeEvent(
       'briefing',
       this.now,
-      'Orbital race control online. Twelve labs cleared for launch.',
+      DEFAULT_RACE_CONTROL_CLIPS.briefing.text,
       {
         id: `briefing.${this.run}`,
         clipId: 'briefing',
@@ -301,35 +342,48 @@ export class RaceControlDirector {
       return;
     }
 
-    if (this.phase === 'race' && previousPhase === 'countdown') {
-      this.playerRank = {
-        committed: snapshot.player?.rank || null,
-        candidate: snapshot.player?.rank || null,
-        since: this.now,
-      };
-      this.emit(makeEvent(
-        'green',
-        this.now,
-        'Launch confirmed. The race to HELIOS is on.',
-        {
-          id: `green.${this.run}`,
-          clipId: 'green',
-          dedupeKey: 'green',
-        },
-      ));
-    }
+    // Collect every event caused by this immutable snapshot before selecting
+    // a transmission. Without this transaction, whichever detector happened
+    // to run first could seize the channel before a higher-priority event from
+    // the same simulation frame was known.
+    this._batchingUpdate = true;
+    try {
+      if (this.phase === 'race' && previousPhase === 'countdown') {
+        this.playerRank = {
+          committed: snapshot.player?.rank || null,
+          candidate: snapshot.player?.rank || null,
+          since: this.now,
+        };
+        this.emit(makeEvent(
+          'green',
+          this.now,
+          DEFAULT_RACE_CONTROL_CLIPS.green.text,
+          {
+            id: `green.${this.run}`,
+            clipId: 'green',
+            dedupeKey: 'green',
+            // Countdown time is intentionally frozen. This priority call must
+            // bypass the briefing's simulation-time minimum gap at GO.
+            interrupt: true,
+          },
+        ));
+      }
 
-    if (this.phase === 'race') {
-      const leaderChanged = this._detectLeader(snapshot);
-      this._detectRank(snapshot, leaderChanged);
-      this._detectDraft(snapshot);
-      this._detectCores(snapshot);
-      this._detectImpactAndShield(snapshot);
-      this._detectSector(snapshot);
+      if (this.phase === 'race') {
+        const leaderChanged = this._detectLeader(snapshot);
+        this._detectRank(snapshot, leaderChanged);
+        this._detectDraft(snapshot);
+        this._detectSlingshot(snapshot);
+        this._detectCores(snapshot);
+        this._detectImpactAndShield(snapshot);
+        this._detectSector(snapshot);
+      }
+      // Results can be entered on the same simulation frame as the final
+      // crossing. Keep finish detection alive for that boundary frame.
+      if (this.phase === 'race' || this.phase === 'results') this._detectFinish(snapshot);
+    } finally {
+      this._batchingUpdate = false;
     }
-    // Results can be entered on the same simulation frame as the final
-    // crossing. Keep finish detection alive for that boundary frame.
-    if (this.phase === 'race' || this.phase === 'results') this._detectFinish(snapshot);
 
     this._purgeStale();
     this._drain();
@@ -360,7 +414,13 @@ export class RaceControlDirector {
     if (normalized.interrupt && this.current && normalized.priority > this.current.priority) {
       this._cancelCurrent();
     }
-    this._drain();
+    try {
+      this.onEvent(normalized);
+    } catch {
+      // Race direction is presentation-only; narration must keep running if a
+      // host moment callback is unavailable or fails.
+    }
+    if (!this._batchingUpdate) this._drain();
     return true;
   }
 
@@ -376,17 +436,14 @@ export class RaceControlDirector {
 
     const previous = this.leader.committed;
     this.leader.committed = observed;
-    const early = previous === null;
-    const text = early
-      ? `${spokenLab(observed)} establishes the early lead.`
-      : observed === 'OPENAI'
-        ? 'OpenAI takes command of the orbital sprint.'
-        : `${spokenLab(observed)} takes the lead${previous === 'OPENAI' ? ' from OpenAI' : ''}.`;
+    const clipId = `leader.${observed}`;
+    const text = DEFAULT_RACE_CONTROL_CLIPS[clipId]?.text ||
+      `${spokenLab(observed)} takes the lead.`;
     this.emit(makeEvent('leader', this.now, text, {
       id: `leader.${observed}.${Math.round(this.now * 10)}`,
-      clipId: `leader.${observed}`,
+      clipId,
       dedupeKey: 'leader',
-      meta: { leader: observed, previous },
+      meta: { leader: observed, previous, early: previous === null },
     }));
     return true;
   }
@@ -415,20 +472,19 @@ export class RaceControlDirector {
     // A lead-change call already tells this story more cleanly.
     if (leaderChanged && (observed === 1 || previous === 1)) return;
 
-    const moved = Math.abs(previous - observed);
-    const text = improved
-      ? moved > 1
-        ? `OpenAI surges from ${pWord(previous)} to ${pWord(observed)}.`
-        : `OpenAI clears ${spokenLab(rival)} for ${pWord(observed)}.`
-      : moved > 1
-        ? `Trouble for OpenAI. Down to ${pWord(observed)}.`
-        : `${spokenLab(rival)} gets by OpenAI. OpenAI drops to ${pWord(observed)}.`;
     const kind = improved ? 'rankUp' : 'rankDown';
+    const fallbackId = improved ? 'rank.up' : 'rank.down';
+    const text = DEFAULT_RACE_CONTROL_CLIPS[fallbackId].text;
     this.emit(makeEvent(kind, this.now, text, {
       id: `rank.${previous}.${observed}.${Math.round(this.now * 10)}`,
       clipId: `rank.${improved ? 'up' : 'down'}.${observed}.${rival || 'field'}`,
       dedupeKey: 'player-rank',
-      meta: { previous, rank: observed, rival },
+      meta: {
+        previous,
+        rank: observed,
+        rival,
+        positions: Math.abs(previous - observed),
+      },
     }));
   }
 
@@ -440,11 +496,7 @@ export class RaceControlDirector {
       this.emit(makeEvent(
         'draft',
         this.now,
-        pick([
-          'Draft link established. Burst charge is climbing.',
-          'OpenAI locks onto the slipstream. Free energy on the link.',
-          'Wake telemetry acquired. OpenAI is charging in the draft.',
-        ], `draft.${this.run}.${Math.floor(this.now / 8)}`),
+        DEFAULT_RACE_CONTROL_CLIPS.draft.text,
         {
           id: `draft.${this.run}.${Math.round(this.draftSince * 10)}`,
           clipId: 'draft',
@@ -456,16 +508,59 @@ export class RaceControlDirector {
     this.prevDrafting = drafting;
   }
 
+  _detectSlingshot(snapshot) {
+    const player = snapshot.player || {};
+    const ready = Boolean(player.slingshotReady);
+    const readySerial = player.slingshotReadySerial || 0;
+    const fireSerial = player.slingshotSerial || 0;
+    const readyEdge = ready && readySerial !== this.prevSlingshotReadySerial;
+    const fireEdge = fireSerial !== this.prevSlingshotSerial;
+    const target = player.draftTarget || null;
+
+    if (fireEdge) {
+      // A deployment makes a still-queued armed call obsolete.
+      this.queue = this.queue.filter(item => item.kind !== 'slingshotReady');
+      this.emit(makeEvent(
+        'slingshotFire',
+        this.now,
+        DEFAULT_RACE_CONTROL_CLIPS['slingshot.fire'].text,
+        {
+          id: `slingshot-fire.${this.run}.${fireSerial}`,
+          clipId: 'slingshot.fire',
+          dedupeKey: 'slingshot-fire',
+          interrupt: true,
+          meta: { serial: fireSerial, target },
+        },
+      ));
+    } else if (readyEdge) {
+      this.emit(makeEvent(
+        'slingshotReady',
+        this.now,
+        DEFAULT_RACE_CONTROL_CLIPS['slingshot.ready'].text,
+        {
+          id: `slingshot-ready.${this.run}.${readySerial}`,
+          clipId: 'slingshot.ready',
+          dedupeKey: 'slingshot-ready',
+          meta: { serial: readySerial, target },
+        },
+      ));
+    }
+
+    if (ready) this.prevSlingshotReadySerial = readySerial;
+    this.prevSlingshotSerial = fireSerial;
+  }
+
   _detectCores(snapshot) {
     const packets = snapshot.player?.packets || 0;
     if (packets > this.prevPackets) {
       const total = snapshot.player?.packetTotal || 8;
-      const text = packets >= total
-        ? 'Every data core secured. OpenAI has a full inference payload.'
-        : `Data core secured. ${packets} of ${total}. Burst and shields replenished.`;
+      const complete = packets >= total;
+      const text = complete
+        ? DEFAULT_RACE_CONTROL_CLIPS['core.8'].text
+        : DEFAULT_RACE_CONTROL_CLIPS.core.text;
       this.emit(makeEvent('core', this.now, text, {
         id: `core.${packets}`,
-        clipId: `core.${packets}`,
+        clipId: complete ? 'core.8' : `core.${packets}`,
         dedupeKey: 'core',
         meta: { packets, total },
       }));
@@ -485,12 +580,7 @@ export class RaceControlDirector {
       this.emit(makeEvent(
         'impact',
         this.now,
-        shield < 38
-          ? `Heavy contact. OpenAI shield down to ${Math.round(shield)} percent.`
-          : pick([
-            `Contact. OpenAI shield holding at ${Math.round(shield)} percent.`,
-            'OpenAI trades paint in vacuum. Shield is still online.',
-          ], `impact.${impactSerial}.${Math.round(this.now)}`),
+        DEFAULT_RACE_CONTROL_CLIPS.impact.text,
         {
           id: `impact.${impactSerial}.${Math.round(this.now * 10)}`,
           clipId: 'impact',
@@ -505,7 +595,7 @@ export class RaceControlDirector {
       this.emit(makeEvent(
         'shieldGone',
         this.now,
-        'Shield failure. OpenAI is in limp mode. Clean line, now.',
+        DEFAULT_RACE_CONTROL_CLIPS['shield.gone'].text,
         {
           id: `shield-gone.${this.run}`,
           clipId: 'shield.gone',
@@ -518,7 +608,7 @@ export class RaceControlDirector {
       this.emit(makeEvent(
         'shieldLow',
         this.now,
-        `Thermal shield critical. ${Math.round(shield)} percent. Keep it off the barriers.`,
+        DEFAULT_RACE_CONTROL_CLIPS['shield.low'].text,
         {
           id: `shield-low.${this.run}`,
           clipId: 'shield.low',
@@ -551,18 +641,12 @@ export class RaceControlDirector {
       this.sectorsCalled.add(i);
       const sector = this.sectors[i];
       const isFinal = i === this.sectors.length - 1;
-      const authored = {
-        '02': 'Sector two. Karman Climb. The field goes to full thrust.',
-        '03': 'Sector three. Lunar Slingshot. Momentum is everything here.',
-        '04': 'Sector four. Dark-Side Switchback. No sunlight, no margin.',
-        '05': 'Sector five. Quantum Data Stream. The racing line is wide open.',
-        '06': 'Final approach. HELIOS is awake. Every position is live.',
-      };
       const kind = isFinal ? 'final' : 'sector';
-      this.emit(makeEvent(kind, this.now, authored[sector.code] ||
+      const clipId = `sector.${sector.code}`;
+      this.emit(makeEvent(kind, this.now, DEFAULT_RACE_CONTROL_CLIPS[clipId]?.text ||
         `Sector ${spokenLab(sector.code)}. ${spokenLab(sector.name)}.`, {
         id: `sector.${sector.code}`,
-        clipId: `sector.${sector.code}`,
+        clipId,
         dedupeKey: isFinal ? 'final' : `sector.${sector.code}`,
         interrupt: isFinal,
         meta: { index: i, code: sector.code, name: sector.name },
@@ -580,20 +664,23 @@ export class RaceControlDirector {
     this.prevFinished = true;
     const rank = snapshot.player?.rank || 12;
     const won = rank === 1;
+    const clipId = won ? 'finish.win' : 'finish.loss';
     this.queue.length = 0;
     this.emit(makeEvent(
       'finish',
       this.now,
-      won
-        ? 'Compute claimed! OpenAI wins the race to HELIOS!'
-        : `HELIOS reached. OpenAI finishes ${pWord(rank)}. The array belongs to ${spokenLab(snapshot.order?.[0]?.name)}.`,
+      DEFAULT_RACE_CONTROL_CLIPS[clipId].text,
       {
         id: `finish.${won ? 'win' : rank}`,
-        clipId: won ? 'finish.win' : `finish.loss.${rank}`,
+        clipId: won ? clipId : `finish.loss.${rank}`,
         dedupeKey: 'finish',
         interrupt: true,
         staleAfter: 60,
-        meta: { rank, won },
+        meta: {
+          rank,
+          won,
+          winner: snapshot.order?.[0]?.name || null,
+        },
       },
     ));
   }

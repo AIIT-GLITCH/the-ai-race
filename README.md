@@ -25,7 +25,8 @@ npm start
 - `A D` / `← →`: steer
 - `S` / `↓`: brake
 - `Space`: airbrake drift
-- `Shift`: inference burst
+- `Shift`: inference burst; fresh-press it when a wake lock is armed to launch a
+  slingshot
 - `C`: chase, wide, cockpit, and orbital-drone cameras
 - `B`: recover ship
 - `R`: restart
@@ -36,11 +37,13 @@ Standard gamepads and full touch controls are supported.
 
 ## Race setup
 
-- **Rookie:** calmer rivals, stronger grip and edge assistance, slower boost
-  drain, faster shield recovery, and reduced impact damage.
-- **Pro:** the balanced intended race.
-- **Apex:** faster cornering and overtakes, tighter catch-up bounds, no edge
-  assist, harsher impacts, and a more demanding boost economy.
+- **Rookie:** calmer rivals, stronger grip and edge assistance, faster shield
+  recovery, gentler contact penalties, and one rival slingshot each.
+- **Pro:** the intended balance, with reduced passive recovery, less burst grip,
+  harder contact, and up to two slingshots per rival.
+- **Apex:** faster cornering and overtakes, no edge assist or passive shield
+  recovery, the harshest burst/contact economy, and up to three rival
+  slingshots.
 - **Driver:** choose ORBIT-01 or the text-only Sam Altman tribute role. The
   Sam option changes the ship credential, HUD, and results presentation only.
   It uses no likeness, endorsement claim, or cloned voice.
@@ -67,15 +70,21 @@ to setup.
   burst behavior.
 - A 2,725 m spline course with 108 m of elevation, 30° banking, six named
   sectors, full-width uplink pads, and eight optional off-line data cores.
-- Drafting that reduces drag and slowly charges the inference-burst meter.
+- Wake-lock drafting that reduces drag and charges a separate slingshot. Hold a
+  clean line behind a rival until `WAKE LOCKED`, then release and fresh-press
+  `Shift` to spend the lock on a short attack surge. Rival ships earn and deploy
+  the same move rather than receiving a player-only speed trick.
+- Contact is costly racecraft: a real wall or ship hit scrubs speed, spills
+  burst energy, breaks the wake lock, and briefly locks out boosting. A depleted
+  shield puts the craft into limp mode, where inference bursts cannot fire.
 - A colossal procedural orbital data center, Earth limb, compute monoliths,
   solar arrays, sector gates, data-stream tunnel, aurora, particles, and bloom.
 - A priority-driven orbital race-control narrator calls stable lead changes,
-  overtakes, sectors, draft links, core pickups, damage, final approach, and
-  classification with baked speech, radio processing, captions, and music
-  ducking. Compressed clips prefetch during setup; launch-critical lines decode
-  in a silent offline context while the menu is open, while the remaining calls
-  decode in small idle-time batches so speech starts quickly without stealing
+  overtakes, sectors, wake locks, slingshots, core pickups, damage, final
+  approach, and classification with baked generic speech, radio processing,
+  captions, and music-bed ducking. Compressed clips prefetch during setup;
+  launch-critical calls decode silently while the menu is open, and the rest
+  decode in small idle-time batches for low-latency playback without stealing
   the opening race frames.
 - Four cameras, spatial Doppler rival engines, generative sector-aware score,
   start tones, boost roar, wind, and wall scrape.
@@ -94,7 +103,10 @@ reconstruction sharpening.
 This is still WebGL raster rendering. It does not claim native path tracing,
 RTXDI, ReSTIR GI, Neural Radiance Cache, DLSS, frame generation, Reflex, or
 RTX IO. The visual equivalents are deliberately bounded so the same static
-browser build remains playable without proprietary SDKs.
+browser build remains playable without proprietary SDKs. Launch, contact,
+overtake, sector, slingshot, and finish drama is directed through existing
+camera, lighting, post-processing, trail, and HUD envelopes—no extra scene draw
+calls. Automated checks cap the launch at 280 draw calls and the course at 220.
 
 ## Verification
 

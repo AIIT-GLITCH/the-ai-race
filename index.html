@@ -35,6 +35,7 @@
   body:not(.race-active) #raceBox,
   body:not(.race-active) #msg,
   body:not(.race-active) #launchCue,
+  body:not(.race-active) #momentStamp,
   body:not(.race-active) #leaderboard,
   body:not(.race-active) #telemetry,
   body:not(.race-active) #minimap,
@@ -159,16 +160,96 @@
     top: 15%;
     transform: translateX(-50%);
     opacity: 0;
+    padding: 7px 11px 6px;
     color: var(--dim);
+    background: rgba(4, 9, 14, .58);
+    border: 1px solid transparent;
     font-size: 9px;
     font-weight: 900;
     letter-spacing: .2em;
     text-transform: uppercase;
-    transition: opacity .16s ease;
+    transition:
+      opacity .16s ease,
+      color .16s ease,
+      background .16s ease,
+      border-color .16s ease,
+      box-shadow .16s ease,
+      transform .16s ease;
     white-space: nowrap;
+    backdrop-filter: blur(9px);
   }
   #launchCue.live { opacity: 1; }
   #launchCue b { color: var(--acid); }
+  #launchCue.battle {
+    opacity: 1;
+    color: var(--cyan);
+    background: rgba(3, 13, 20, .78);
+    border-color: rgba(108, 236, 255, .3);
+    box-shadow: inset 0 0 18px rgba(108, 236, 255, .055);
+  }
+  #launchCue.battle b { color: var(--cyan); }
+  #launchCue.ready {
+    opacity: 1;
+    color: var(--acid);
+    background: rgba(13, 18, 7, .86);
+    border-color: rgba(223, 255, 71, .55);
+    box-shadow: 0 0 24px rgba(223, 255, 71, .12), inset 0 0 20px rgba(223, 255, 71, .07);
+    transform: translateX(-50%) scale(1.025);
+  }
+  #launchCue.ready b { color: var(--ink); }
+  #launchCue.active {
+    opacity: 1;
+    color: var(--ink);
+    background: linear-gradient(90deg, rgba(255, 62, 147, .76), rgba(255, 101, 52, .72));
+    border-color: rgba(255, 255, 255, .68);
+    box-shadow: 0 0 30px rgba(255, 62, 147, .24), inset 0 0 18px rgba(255, 255, 255, .08);
+    animation: wakeActive .42s ease-in-out infinite alternate;
+  }
+  #launchCue.active b { color: white; }
+  @keyframes wakeActive {
+    to { box-shadow: 0 0 38px rgba(255, 62, 147, .36), inset 0 0 22px rgba(255, 255, 255, .13); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #launchCue.active { animation: none; }
+    #launchCue,
+    #momentStamp { transition-duration: .01ms; }
+  }
+
+  #momentStamp {
+    left: 22px;
+    top: 320px;
+    max-width: min(310px, calc(100vw - 44px));
+    overflow: hidden;
+    padding: 7px 11px 6px;
+    transform: translateX(-7px);
+    opacity: 0;
+    visibility: hidden;
+    color: var(--cyan);
+    background: linear-gradient(90deg, rgba(3, 13, 20, .88), rgba(3, 13, 20, .54));
+    border-left: 2px solid var(--cyan);
+    box-shadow: 0 10px 28px rgba(0,0,0,.2), inset 0 0 18px rgba(108,236,255,.035);
+    font-size: 8px;
+    font-weight: 950;
+    letter-spacing: .2em;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: opacity .16s ease, transform .18s ease, visibility 0s linear .18s;
+    backdrop-filter: blur(10px);
+  }
+  #momentStamp.live {
+    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0s;
+  }
+  #momentStamp.danger {
+    color: #ff9b82;
+    background: linear-gradient(90deg, rgba(28, 8, 7, .9), rgba(22, 6, 10, .58));
+    border-left-color: var(--orange);
+    box-shadow: 0 10px 28px rgba(0,0,0,.24), inset 0 0 20px rgba(255,101,52,.055);
+  }
 
   #raceControl {
     left: 50%;
@@ -681,16 +762,34 @@
   th { color: var(--dim); font-size: 8px; letter-spacing: .2em; text-transform: uppercase; }
   tr.you td { color: #05060a; background: var(--acid); font-weight: 900; }
   .resultsMeta {
-    margin: -14px auto 20px;
+    margin: -14px auto 9px;
     color: var(--cyan);
     font-size: 8px;
     font-weight: 950;
     letter-spacing: .2em;
     text-transform: uppercase;
   }
+  .resultsStinger {
+    width: fit-content;
+    max-width: 100%;
+    min-height: 18px;
+    margin: 0 auto 16px;
+    overflow: hidden;
+    padding: 5px 10px 4px;
+    color: var(--acid);
+    background: rgba(12, 18, 8, .64);
+    border: 1px solid rgba(223, 255, 71, .22);
+    font-size: 8px;
+    font-weight: 950;
+    letter-spacing: .2em;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
   .resultsHero {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: 1.25fr repeat(4, minmax(0, 1fr));
     gap: 1px;
     margin: 0 auto 22px;
     background: rgba(255,255,255,.12);
@@ -794,8 +893,18 @@
     #results .panel { padding: 24px 14px 72px; }
     #results .panel h2 { font-size: clamp(38px, 11vw, 52px); }
     .resultsSub { margin-bottom: 20px; letter-spacing: .16em; }
-    .resultsMeta { margin: -10px auto 14px; letter-spacing: .14em; }
+    .resultsMeta { margin: -10px auto 7px; letter-spacing: .14em; }
+    .resultsStinger {
+      margin-bottom: 12px;
+      padding-inline: 8px;
+      font-size: 7px;
+      letter-spacing: .14em;
+    }
     .resultsHero { grid-template-columns: repeat(2, 1fr); }
+    .resultStat.slingshotStat {
+      grid-column: 1 / -1;
+      text-align: center;
+    }
     .resultsTableWrap {
       max-height: 210px;
       margin-bottom: 14px;
@@ -836,7 +945,23 @@
     .barLabel { font-size: 7px; }
     #msg { top: 20%; font-size: 36px; }
     #msg.draft, #msg.camera { top: 16%; font-size: 12px; }
-    #launchCue { top: 14%; font-size: 7px; }
+    #launchCue {
+      top: 14%;
+      max-width: calc(100vw - 20px);
+      overflow: hidden;
+      padding: 6px 8px 5px;
+      font-size: 7px;
+      letter-spacing: .14em;
+      text-overflow: ellipsis;
+    }
+    #momentStamp {
+      left: 10px;
+      top: 105px;
+      max-width: min(58vw, 280px);
+      padding: 6px 8px 5px;
+      font-size: 7px;
+      letter-spacing: .14em;
+    }
     #raceControl {
       bottom: calc(3.5vh + min(65vw, 260px) + 18px);
       width: calc(100vw - 24px);
@@ -878,6 +1003,7 @@
 
 <div class="hud" id="msg"></div>
 <div class="hud" id="launchCue"><b>Hold thrust</b> // steer clear // <b>Shift to burst</b></div>
+<div class="hud" id="momentStamp" role="status" aria-live="polite" aria-atomic="true"></div>
 <section class="hud" id="raceControl" role="status" aria-live="polite" aria-atomic="true">
   <div class="race-control-shell">
     <i class="race-control-pulse" aria-hidden="true"></i>
@@ -935,7 +1061,7 @@
           <legend>Driver identity</legend>
           <div class="setupChoices" role="group" aria-label="driver identity">
             <button class="setupOption" type="button" data-driver="pilot" aria-pressed="true">Pilot 01<small>OpenAI race division</small></button>
-            <button class="setupOption" type="button" data-driver="sam" aria-pressed="false">Sam Altman<small>Unofficial tribute role</small></button>
+            <button class="setupOption" type="button" data-driver="sam" aria-pressed="false">Sam Altman<small>Unofficial text-only tribute</small></button>
           </div>
         </fieldset>
       </div>
@@ -953,11 +1079,13 @@
     <h2 id="resTitle">Compute Claimed</h2>
     <div class="resultsSub" id="resultsSub">Helios orbital array // final classification</div>
     <div class="resultsMeta" id="resultsMeta">OPENAI PILOT // PRO PROTOCOL</div>
+    <div class="resultsStinger" id="resultsStinger" role="status" aria-live="polite">Race telemetry secured</div>
     <div class="resultsHero" aria-label="player result summary">
       <div class="resultStat"><small>Driver</small><b id="resultDriver">OPENAI PILOT</b></div>
       <div class="resultStat"><small>Protocol</small><b id="resultDifficulty">PRO</b></div>
       <div class="resultStat"><small>Mission time</small><b id="resultTime">0:00.00</b></div>
       <div class="resultStat"><small>Data cores</small><b id="resultCores">0 / 8</b></div>
+      <div class="resultStat slingshotStat"><small>Slingshots</small><b id="resultSlingshots">0</b></div>
     </div>
     <div class="resultsTableWrap" tabindex="0" aria-label="full race classification">
       <table>

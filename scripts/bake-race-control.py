@@ -24,10 +24,10 @@ from kokoro import KPipeline
 CLIPS = {
     "briefing": "Orbital race control online. Twelve labs cleared for launch.",
     "green": "Launch confirmed. The race to HELIOS is on.",
-    "leader.OPENAI": "Open A I takes command of the orbital sprint.",
+    "leader.OPENAI": "OpenAI takes command of the orbital sprint.",
     "leader.ANTHROPIC": "Anthropic takes the lead.",
     "leader.DEEPMIND": "DeepMind takes the lead.",
-    "leader.xAI": "x A I takes the lead.",
+    "leader.xAI": "xAI takes the lead.",
     "leader.META": "Meta takes the lead.",
     "leader.DEEPSEEK": "DeepSeek takes the lead.",
     "leader.MISTRAL": "Mistral takes the lead.",
@@ -36,26 +36,33 @@ CLIPS = {
     "leader.COHERE": "Cohere takes the lead.",
     "leader.MINIMAX": "MiniMax takes the lead.",
     "leader.MICROSOFT": "Microsoft takes the lead.",
-    "rank.up": "Open A I is charging through the field.",
-    "rank.down": "Open A I loses a position. Time to answer back.",
+    "rank.up": "OpenAI is charging through the field.",
+    "rank.down": "OpenAI loses a position. Time to answer back.",
     "draft": "Draft link established. Burst charge is climbing.",
+    "slingshot.ready": "Wake lock complete. Slingshot is armed.",
+    "slingshot.fire": "Slingshot deployed. OpenAI is coming through.",
     "core": "Data core secured. Burst and shields replenished.",
-    "core.8": "Every data core secured. Open A I has a full inference payload.",
-    "impact": "Contact. Open A I shield is holding.",
+    "core.8": "Every data core secured. OpenAI has a full inference payload.",
+    "impact": "Contact. OpenAI shield is holding.",
     "shield.low": "Thermal shield critical. Keep it off the barriers.",
-    "shield.gone": "Shield failure. Open A I is in limp mode. Clean line, now.",
+    "shield.gone": "Shield failure. OpenAI is in limp mode. Clean line, now.",
     "sector.02": "Sector two. Karman Climb. The field goes to full thrust.",
     "sector.03": "Sector three. Lunar Slingshot. Momentum is everything here.",
     "sector.04": "Sector four. Dark-Side Switchback. No sunlight, no margin.",
     "sector.05": "Sector five. Quantum Data Stream. The racing line is wide open.",
     "sector.06": "Final approach. HELIOS is awake. Every position is live.",
-    "finish.win": "Compute claimed! Open A I wins the race to HELIOS!",
-    "finish.loss": "HELIOS reached. Open A I is classified. The race is complete.",
+    "finish.win": "Compute claimed! OpenAI wins the race to HELIOS!",
+    "finish.loss": "HELIOS reached. OpenAI is classified. The race is complete.",
 }
 
 
 def safe_name(clip_id: str) -> str:
     return clip_id.replace(".", "-").replace("xAI", "xai").lower()
+
+
+def speech_text(text: str) -> str:
+    """Keep captions canonical while spelling initialisms for the stock voice."""
+    return text.replace("OpenAI", "Open A I").replace("xAI", "x A I")
 
 
 def main() -> None:
@@ -64,6 +71,12 @@ def main() -> None:
     parser.add_argument("--voice", default="bm_george")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--speed", type=float, default=1.06)
+    parser.add_argument(
+        "--clip",
+        action="append",
+        choices=sorted(CLIPS),
+        help="Bake only this clip ID (repeatable). Defaults to the full library.",
+    )
     args = parser.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -75,10 +88,16 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="ai-race-control-") as temp_dir:
         temp = Path(temp_dir)
-        for clip_id, text in CLIPS.items():
+        selected = args.clip or list(CLIPS)
+        for clip_id in selected:
+            text = CLIPS[clip_id]
             chunks = [
                 result.audio.detach().cpu().numpy()
-                for result in pipeline(text, voice=args.voice, speed=args.speed)
+                for result in pipeline(
+                    speech_text(text),
+                    voice=args.voice,
+                    speed=args.speed,
+                )
             ]
             if not chunks:
                 raise RuntimeError(f"Kokoro returned no audio for {clip_id}")

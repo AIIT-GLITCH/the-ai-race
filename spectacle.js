@@ -1198,17 +1198,21 @@ export function createSpectacle({
   const speedLines = new THREE.LineSegments(speedGeometry, speedMaterial);
   speedLines.frustumCulled = false;
   scene.add(speedLines);
+  const speedBaseColor = speedMaterial.color.clone();
+  const slingshotLineColor = new THREE.Color(0xe8ff8a);
+  const trailBaseTints = new WeakMap();
+  const slingshotTrailColor = new THREE.Color(0xf2ffc2);
 
   // A small number of moving lights produces expensive-looking specular motion
   // across the ships and deck without creating hundreds of real lights.
-  const chaseLight = new THREE.PointLight(
-    0x93dfff,
-    profile.name === 'ULTRA' ? 84 : (profile.name === 'HIGH' ? 52 : 18),
-    52,
-    2,
-  );
+  const chaseLightPower = profile.name === 'ULTRA' ? 84 : (profile.name === 'HIGH' ? 52 : 18);
+  const chaseLight = new THREE.PointLight(0x93dfff, chaseLightPower, 52, 2);
+  const chaseLightBaseColor = chaseLight.color.clone();
   const boostLightPower = profile.name === 'ULTRA' ? 52 : (profile.name === 'HIGH' ? 30 : 0);
+  const slingshotLightPower = profile.name === 'ULTRA' ? 112 : (profile.name === 'HIGH' ? 68 : 24);
   const boostLight = new THREE.PointLight(0xdfff47, boostLightPower, 32, 2);
+  const boostLightBaseColor = boostLight.color.clone();
+  const slingshotLightColor = new THREE.Color(0xf4ffd0);
   scene.add(chaseLight, boostLight);
 
   // RTXDI can evaluate huge light sets by resampling the most useful emitters.
@@ -1278,6 +1282,12 @@ export function createSpectacle({
 
     const speed = Math.hypot(player.vA || 0, player.vL || 0);
     const boost = player.boosting ? 1 : 0;
+    // Slingshot is an authored tier above ordinary burst. It deliberately
+    // reuses the existing line, trail, material, and light pools so the hotter
+    // look costs no additional draws. Missing or malformed gameplay fields
+    // collapse to the normal boost path.
+    const slingshotTime = Number(player.slingshotT);
+    const slingshot = Number.isFinite(slingshotTime) && slingshotTime > 0 ? 1 : 0;
     const playerS = ((player.s % total) + total) % total;
 
     nearestEmitters.length = 0;
@@ -1319,10 +1329,11 @@ export function createSpectacle({
       bounceLight.position.set(player.wx, player.wy, player.wz)
         .addScaledVector(tempUp, -4.6)
         .addScaledVector(tempRight, -2.3);
-      bounceLight.intensity = bounceLightPower * liveEnergy * (.82 + boost * .18);
+      bounceLight.intensity = bounceLightPower * liveEnergy *
+        (.82 + boost * .18 + slingshot * .48);
     }
 
-    const phase = (time * (42 + speed * 1.9)) % 210;
+    const phase = (time * (42 + speed * 1.9 + slingshot * 138)) % 210;
     for (let i = 0; i < speedSeeds.length; i++) {
       const seed = speedSeeds[i];
       let z = (seed.z + seed.phase - phase) % 210;
@@ -1331,22 +1342,57 @@ export function createSpectacle({
         .addScaledVector(tempForward, z - 18)
         .addScaledVector(tempRight, seed.x)
         .addScaledVector(tempUp, seed.y);
-      const length = seed.length * (.5 + speed / 70 + boost * .8);
+      const length = seed.length * (.5 + speed / 70 + boost * .8 + slingshot * 1.65);
       tempEnd.copy(tempStart).addScaledVector(tempForward, -length);
       speedPositions.set([tempStart.x, tempStart.y, tempStart.z, tempEnd.x, tempEnd.y, tempEnd.z], i * 6);
     }
     speedPositionAttribute.needsUpdate = true;
     const speedEnergy = Math.max(0, Math.min(1, (speed - 28) / 52));
-    speedMaterial.opacity = profile.reducedMotion ? 0 :
-      (state?.phase === 'race' ? 1 : .18) * (speedEnergy * .12 + boost * .32);
+    speedMaterial.opacity = profile.reducedMotion ? 0 : Math.min(
+      .94,
+      (state?.phase === 'race' ? 1 : .18) *
+        (speedEnergy * .12 + boost * .32 + slingshot * .5),
+    );
+    speedMaterial.color.copy(speedBaseColor)
+      .lerp(slingshotLineColor, slingshot * .68)
+      .multiplyScalar(1 + slingshot * .28);
+
+    const trail = player.trail;
+    const trailMaterial = trail?.mesh?.material;
+    const trailTint = trailMaterial?.uniforms?.tint?.value;
+    if (trail && Number.isFinite(trail.boostGlow)) {
+      trail.boostGlow = Math.max(trail.boostGlow, boost + slingshot * 1.35);
+    }
+    if (trailMaterial && trailTint?.copy && trailTint?.lerp) {
+      let baseTint = trailBaseTints.get(trailMaterial);
+      if (!baseTint) {
+        baseTint = trailTint.clone();
+        trailBaseTints.set(trailMaterial, baseTint);
+      }
+      trailTint.copy(baseTint)
+        .lerp(slingshotTrailColor, slingshot * .58)
+        .multiplyScalar(1 + slingshot * .38);
+    }
 
     chaseLight.position.set(player.wx, player.wy, player.wz)
       .addScaledVector(tempForward, -4)
       .addScaledVector(tempUp, 6);
+    chaseLight.color.copy(chaseLightBaseColor).lerp(slingshotLightColor, slingshot * .34);
+    chaseLight.intensity = chaseLightPower * (1 + slingshot * .42);
+    chaseLight.distance = 52 + slingshot * 12;
     boostLight.position.set(player.wx, player.wy, player.wz)
       .addScaledVector(tempForward, -2.4)
       .addScaledVector(tempUp, .5);
-    boostLight.intensity = boostLightPower * (.12 + boost * .88);
+    boostLight.color.copy(boostLightBaseColor).lerp(slingshotLightColor, slingshot * .56);
+    boostLight.intensity =
+      boostLightPower * (.12 + boost * .88) + slingshotLightPower * slingshot;
+    boostLight.distance = 32 + slingshot * 16;
+    if (portalGlow) {
+      portalGlow.material.opacity = Math.min(
+        .96,
+        .58 + Math.sin(time * 2.2) * .16 + slingshot * .2,
+      );
+    }
   }
 
   return {

@@ -35,16 +35,86 @@ const menuLayout = await page.evaluate(() => ({
 await mkdir('.qa', { recursive: true });
 await page.screenshot({ path: '.qa/mobile-menu.png' });
 await page.click('#startBtn');
-await page.evaluate(() => {
+const armed = await page.evaluate(() => {
   window.__aiRace.testMode(true);
   window.__aiRace.skipCountdown();
-  document.querySelector('#tg').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-  window.__aiRace.step(420);
-  document.querySelector('#tg').dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-  document.querySelector('#tboost').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-  window.__aiRace.step(90);
-  document.querySelector('#tboost').dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
   window.__aiRace.renderOnce();
+  return window.__aiRace.armSlingshot();
+});
+const beforeSlingshot = await page.evaluate(() => window.__aiRace.state());
+await page.dispatchEvent('#tboost', 'pointerdown', {
+  pointerId: 41,
+  pointerType: 'touch',
+  isPrimary: true,
+  buttons: 1,
+});
+const slingshot = await page.evaluate(() => {
+  window.__aiRace.step(1);
+  window.__aiRace.renderOnce();
+  return {
+    state: window.__aiRace.state(),
+    burstPressed: document.querySelector('#tboost').classList.contains('on'),
+    width: innerWidth,
+    height: innerHeight,
+    bodyWidth: document.body.scrollWidth,
+  };
+});
+await page.waitForFunction(() => {
+  const cue = document.querySelector('#launchCue');
+  const stamp = document.querySelector('#momentStamp');
+  return cue?.classList.contains('active') &&
+    stamp?.classList.contains('live') &&
+    Number(getComputedStyle(cue).opacity) > .8 &&
+    Number(getComputedStyle(stamp).opacity) > .8;
+}, null, { timeout: 2_000 });
+Object.assign(slingshot, await page.evaluate(() => {
+  const rect = element => {
+    const bounds = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      top: bounds.top,
+      bottom: bounds.bottom,
+      left: bounds.left,
+      right: bounds.right,
+      width: bounds.width,
+      height: bounds.height,
+      display: style.display,
+      visibility: style.visibility,
+      opacity: Number(style.opacity),
+      text: element.textContent || '',
+      classes: [...element.classList],
+    };
+  };
+  return {
+    cue: rect(document.querySelector('#launchCue')),
+    moment: rect(document.querySelector('#momentStamp')),
+    width: innerWidth,
+    height: innerHeight,
+    bodyWidth: document.body.scrollWidth,
+  };
+}));
+await page.dispatchEvent('#tboost', 'pointerup', {
+  pointerId: 41,
+  pointerType: 'touch',
+  isPrimary: true,
+  buttons: 0,
+});
+await page.screenshot({ path: '.qa/mobile-slingshot.png' });
+await page.dispatchEvent('#tg', 'pointerdown', {
+  pointerId: 42,
+  pointerType: 'touch',
+  isPrimary: true,
+  buttons: 1,
+});
+await page.evaluate(() => {
+  window.__aiRace.step(420);
+  window.__aiRace.renderOnce();
+});
+await page.dispatchEvent('#tg', 'pointerup', {
+  pointerId: 42,
+  pointerType: 'touch',
+  isPrimary: true,
+  buttons: 0,
 });
 const result = await page.evaluate(() => ({
   state: window.__aiRace.state(),
@@ -108,6 +178,32 @@ if (menuLayout.start.top < 0 || menuLayout.start.bottom > 844 || menuLayout.star
 if (menuLayout.setup.difficulty !== 'rookie' || menuLayout.setup.driver !== 'sam') {
   errors.push(`mobile setup failed: ${JSON.stringify(menuLayout.setup)}`);
 }
+if (!armed ||
+    beforeSlingshot.slingshots !== 0 ||
+    slingshot.state.slingshots !== 1 ||
+    slingshot.state.slingshotSerial !== beforeSlingshot.slingshotSerial + 1 ||
+    slingshot.state.slingshotT <= 0 ||
+    !slingshot.burstPressed) {
+  errors.push(`touch slingshot did not fire exactly once: ${JSON.stringify({ armed, beforeSlingshot, slingshot })}`);
+}
+for (const [name, feedback] of [['cue', slingshot.cue], ['moment', slingshot.moment]]) {
+  if (feedback.display === 'none' ||
+      feedback.visibility === 'hidden' ||
+      feedback.opacity <= 0 ||
+      feedback.left < 0 ||
+      feedback.right > slingshot.width ||
+      feedback.top < 0 ||
+      feedback.bottom > slingshot.height) {
+    errors.push(`mobile slingshot ${name} unsafe: ${JSON.stringify(feedback)}`);
+  }
+}
+if (!slingshot.cue.classes.includes('active') ||
+    !/SLINGSHOT/.test(slingshot.cue.text) ||
+    !slingshot.moment.classes.includes('live') ||
+    !/SLINGSHOT DEPLOYED/.test(slingshot.moment.text) ||
+    slingshot.bodyWidth !== slingshot.width) {
+  errors.push(`mobile slingshot feedback missing: ${JSON.stringify(slingshot)}`);
+}
 if (result.bodyWidth !== result.width) errors.push(`horizontal overflow: ${result.bodyWidth}/${result.width}`);
 if (result.state.speed < 5) errors.push(`touch throttle failed: ${result.state.speed}`);
 if (result.state.boost >= 18) errors.push(`touch burst failed to drain charge: ${result.state.boost}`);
@@ -167,7 +263,7 @@ if (landscapeMenu.bodyWidth !== landscapeMenu.width) {
 }
 await landscapeContext.close();
 if (errors.length) {
-  console.error(JSON.stringify({ menuLayout, result, mobileResults, landscapeMenu, errors }, null, 2));
+  console.error(JSON.stringify({ menuLayout, slingshot, result, mobileResults, landscapeMenu, errors }, null, 2));
   await browser.close();
   process.exit(1);
 }
@@ -175,9 +271,11 @@ console.log(JSON.stringify({
   viewport: `${result.width}x844`,
   speed: result.state.speed.toFixed(1),
   boost: result.state.boost.toFixed(1),
+  touchSlingshots: slingshot.state.slingshots,
   errors,
   screenshots: [
     '.qa/mobile-menu.png',
+    '.qa/mobile-slingshot.png',
     '.qa/mobile-race.png',
     '.qa/mobile-results.png',
     '.qa/mobile-landscape-menu.png',
