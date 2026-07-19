@@ -145,6 +145,22 @@ The browser exposes `window.__aiRace` for deterministic simulation, state
 inspection, camera tests, and hidden-tab frame capture. `window.__zero` remains
 as a compatibility alias for the donor regression tooling.
 
+## How Codex and GPT-5.6 were used
+
+Codex and GPT-5.6 were the project’s engineering and critique environment
+across the main build sessions. GPT-5.6 helped turn the creative direction into
+concrete systems, interrogate weak spots in the race loop, compare design
+options, and refine the visual, mobile, narration, performance, and replay
+priorities. Codex worked directly in the shared codebase to implement those
+decisions, coordinate focused parallel reviews, create deterministic test
+seams, run browser and genuine RTX A6000 validation, fix regressions, package
+the exact source state, and deploy verified production versions.
+
+Human direction established the concept, fictional setting, desired feel,
+feature priorities, public-figure boundaries, and final acceptance decisions.
+The shipped game does not call GPT-5.6 at runtime; it remains a static,
+instant-play browser build.
+
 ## Original art and third-party code
 
 The title key art and compute-panel material were generated specifically for
