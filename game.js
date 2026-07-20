@@ -352,11 +352,65 @@ const ROSTER = [
 
 // ---------- renderer / scene ----------
 const canvas = document.getElementById('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-const renderProfile = selectRenderProfile(renderer);
+function createCompatibilityRenderer(targetCanvas) {
+  let pixelRatio = 1;
+  return {
+    isCompatibilityRenderer: true,
+    capabilities: {
+      maxTextureSize: 4096,
+      maxTextures: 8,
+      isWebGL2: false,
+      getMaxAnisotropy: () => 1,
+    },
+    info: { render: { calls: 0, triangles: 0, points: 0, lines: 0 } },
+    shadowMap: { enabled: false, type: null },
+    outputColorSpace: THREE.SRGBColorSpace,
+    toneMapping: THREE.NoToneMapping,
+    toneMappingExposure: 1,
+    setPixelRatio(value) { pixelRatio = Math.max(.5, Number(value) || 1); },
+    setSize(width, height) {
+      targetCanvas.width = Math.max(1, Math.round(width * pixelRatio));
+      targetCanvas.height = Math.max(1, Math.round(height * pixelRatio));
+    },
+    getDrawingBufferSize(target) {
+      return target.set(targetCanvas.width || 1, targetCanvas.height || 1);
+    },
+    setRenderTarget() {},
+    render() {},
+    getContext() { throw new Error('WebGL unavailable'); },
+  };
+}
+
+let renderer;
+let graphicsFallback = false;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (error) {
+  graphicsFallback = true;
+  renderer = createCompatibilityRenderer(canvas);
+  document.body.classList.add('graphics-fallback');
+  console.warn('[THE AI RACE] WebGL unavailable; compatibility graphics enabled.', error);
+}
+const detectedRenderProfile = selectRenderProfile(renderer);
+const renderProfile = graphicsFallback
+  ? Object.freeze({
+      ...detectedRenderProfile,
+      name: 'COMPATIBILITY',
+      post: false,
+      hdr: false,
+      msaa: 0,
+      shadows: false,
+      shadowMap: 0,
+      gpu: 'WebGL unavailable',
+      software: true,
+      selectionReason: 'WebGL unavailable',
+    })
+  : detectedRenderProfile;
 document.body.dataset.renderProfile = renderProfile.name.toLowerCase();
 const renderEyebrow = document.querySelector('#menu .eyebrow');
-if (renderEyebrow) renderEyebrow.textContent = 'HELIOS ORBITAL GRAND PRIX // BUILD WEEK EXHIBITION';
+if (renderEyebrow) renderEyebrow.textContent = graphicsFallback
+  ? 'COMPATIBILITY LINK // 3D GPU UNAVAILABLE // CONTROLS ONLINE'
+  : 'HELIOS ORBITAL GRAND PRIX // BUILD WEEK EXHIBITION';
 function profilePixelRatio(width = innerWidth, height = innerHeight) {
   const budget = Math.sqrt(renderProfile.maxPixels / Math.max(1, width * height));
   const textureCap = renderer.capabilities.maxTextureSize / Math.max(1, width, height);
@@ -4883,6 +4937,7 @@ const testApi = {
       mobileTuned: renderProfile.mobileTuned,
       mobileTier: renderProfile.mobileTier,
       selectionReason: renderProfile.selectionReason,
+      fallback: graphicsFallback,
       capabilities: renderProfile.capabilities,
       post: renderProfile.post,
       hdr: renderProfile.hdr,
