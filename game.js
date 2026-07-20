@@ -3051,7 +3051,7 @@ function setMuted(m) {
   syncMusicGain(.03);
 }
 function musicLevel() {
-  if (state.muted || state.phase === 'menu' || state.phase === 'results' || state.phase === 'paused') return 0;
+  if (state.muted || state.phase === 'menu' || state.phase === 'paused') return 0;
   return MUSIC_VOL * (narratorDucking ? .32 : 1);
 }
 function syncMusicGain(timeConstant = .16) {
@@ -4239,7 +4239,10 @@ function updateHUD(dt) {
 
 function showResults() {
   state.phase = 'results';
-  stopRaceMusic();
+  // Keep the race anthem alive under the finish celebration and final
+  // classification. It still obeys narrator ducking, mute, pause, and the
+  // explicit return-to-setup stop path.
+  syncMusicGain(.18);
   document.body.classList.remove('race-active');
   document.body.classList.add('results-active');
   hud.launchCue.classList.remove('live', 'battle', 'ready', 'active');

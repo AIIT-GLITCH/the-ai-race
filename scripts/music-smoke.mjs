@@ -45,7 +45,8 @@ await page.keyboard.press('m');
 await page.evaluate(() => window.__aiRace.showResults());
 await page.waitForTimeout(1_050);
 const results = await page.evaluate(() => window.__aiRace.audio());
-assert.equal(results.musicPlaying, false, 'soundtrack fades out and stops at results');
+assert.equal(results.musicPlaying, true, 'soundtrack continues through the results celebration');
+assert.ok(results.music > .005, `results soundtrack remains audible: ${JSON.stringify(results)}`);
 assert.deepEqual(errors, [], `music browser errors:\n${errors.join('\n')}`);
 
 console.log(JSON.stringify({ launched, paused, resumed, muted, results, errors }, null, 2));
