@@ -266,6 +266,10 @@ const STORAGE_KEYS = Object.freeze({
 
 const query = new URLSearchParams(location.search);
 const showcaseMode = query.get('showcase') === '1';
+const showcaseAutoStart = showcaseMode &&
+  query.get('autostart') === '1' &&
+  !matchMedia('(pointer: coarse)').matches &&
+  innerWidth >= 800;
 
 function storedChoice(key, choices, fallback) {
   try {
@@ -4030,7 +4034,7 @@ function launchRace() {
   resetRace();
 }
 hud.start.addEventListener('click', launchRace);
-if (showcaseMode && query.get('autostart') === '1') {
+if (showcaseAutoStart) {
   setTimeout(launchRace, 0);
 }
 document.getElementById('againBtn').addEventListener('click', () => resetRace());
@@ -4857,7 +4861,7 @@ const testApi = {
   showcase() {
     return {
       enabled: showcaseMode,
-      autoStart: showcaseMode && query.get('autostart') === '1',
+      autoStart: showcaseAutoStart,
     };
   },
   showdown() {

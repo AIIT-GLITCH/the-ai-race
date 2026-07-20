@@ -22,6 +22,32 @@ page.on('response', response => {
 
 await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
 await page.waitForFunction(() => Boolean(window.__aiRace), null, { timeout: 60_000 });
+const mobileShowcasePage = await context.newPage();
+const mobileShowcaseUrl = new URL(url);
+mobileShowcaseUrl.searchParams.set('showcase', '1');
+mobileShowcaseUrl.searchParams.set('autostart', '1');
+await mobileShowcasePage.goto(mobileShowcaseUrl.href, { waitUntil: 'networkidle', timeout: 60_000 });
+await mobileShowcasePage.waitForFunction(() => Boolean(window.__aiRace), null, { timeout: 60_000 });
+await mobileShowcasePage.waitForTimeout(500);
+const mobileShowcase = await mobileShowcasePage.evaluate(() => ({
+  phase: window.__aiRace.state().phase,
+  driver: window.__aiRace.state().driver,
+  difficulty: window.__aiRace.state().difficulty,
+  showcase: window.__aiRace.showcase(),
+}));
+if (mobileShowcase.phase !== 'menu' ||
+    mobileShowcase.driver !== 'sam' ||
+    mobileShowcase.difficulty !== 'pro' ||
+    mobileShowcase.showcase.autoStart !== false) {
+  errors.push(`mobile showcase should wait for a tap: ${JSON.stringify(mobileShowcase)}`);
+}
+await mobileShowcasePage.click('#startBtn');
+await mobileShowcasePage.waitForFunction(
+  () => ['countdown', 'race'].includes(window.__aiRace.state().phase),
+  null,
+  { timeout: 10_000 },
+);
+await mobileShowcasePage.close();
 const mobileGraphics = await page.evaluate(() => ({
   ...window.__aiRace.graphics(),
   coarse: matchMedia('(pointer: coarse)').matches,
