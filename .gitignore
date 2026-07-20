@@ -1,5 +1,6 @@
 .qa/
 dist/
 node_modules/
+videos/
 *.log
 __pycache__/
