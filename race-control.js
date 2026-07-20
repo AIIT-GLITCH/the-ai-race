@@ -35,7 +35,7 @@ export const BROADCAST_LABS = Object.freeze([
   'QWEN',
   'MOONSHOT',
   'COHERE',
-  'MINIMAX',
+  'AIIT-THRESHOLD',
   'MICROSOFT',
 ]);
 
@@ -132,7 +132,10 @@ export const DEFAULT_RACE_CONTROL_CLIPS = Object.freeze({
   'leader.QWEN': authoredClip('leader-qwen.mp3', 'Qwen takes the lead.'),
   'leader.MOONSHOT': authoredClip('leader-moonshot.mp3', 'Moonshot takes the lead.'),
   'leader.COHERE': authoredClip('leader-cohere.mp3', 'Cohere takes the lead.'),
-  'leader.MINIMAX': authoredClip('leader-minimax.mp3', 'MiniMax takes the lead.'),
+  'leader.AIIT-THRESHOLD': authoredClip(
+    'leader-aiit-threshold.mp3',
+    'AIIT Threshold takes the lead.',
+  ),
   'leader.MICROSOFT': authoredClip('leader-microsoft.mp3', 'Microsoft takes the lead.'),
   'rank.up': authoredClip('rank-up.mp3', 'OpenAI is charging through the field.'),
   'rank.down': authoredClip('rank-down.mp3', 'OpenAI loses a position. Time to answer back.'),
@@ -322,7 +325,7 @@ function spokenLab(name = '') {
     QWEN: 'Qwen',
     DEEPSEEK: 'DeepSeek',
     DEEPMIND: 'DeepMind',
-    MINIMAX: 'MiniMax',
+    'AIIT-THRESHOLD': 'AIIT Threshold',
     OPENAI: 'OpenAI',
   };
   return aliases[name] || String(name).toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
@@ -646,8 +649,12 @@ export class RaceControlDirector {
       this.queue.length = 18;
     }
 
-    if (normalized.interrupt && this.current && normalized.priority > this.current.priority) {
-      this._cancelCurrent();
+    if (normalized.interrupt) {
+      // Urgent calls jump to the front after the active sentence completes.
+      // Never stop a spoken line mid-word; prune queued lower-priority chatter
+      // instead so the urgent call is still the next thing on air.
+      this.queue = this.queue.filter(item =>
+        item === normalized || item.priority >= normalized.priority);
     }
     try {
       this.onEvent(normalized);
@@ -1091,8 +1098,8 @@ export class RaceControlDirector {
     }
 
     // Every crossing gets an immediate generic finish transmission first.
-    // The following frame may replace it with the exact named/margin claim;
-    // a higher-priority claim safely interrupts the generic program.
+    // When exact margin data arrives, its claim waits for the active sentence
+    // boundary instead of cutting the generic finish call mid-word.
     if (!this.claimCalled && this.emitClaim(snapshot)) return;
     if (this.finishPending &&
         this.now - this.finishPending.detectedAt >= this.finishMarginWait) {
@@ -1844,6 +1851,11 @@ export class RaceControlDirector {
         ...this.audioCacheStats,
       },
     };
+  }
+
+  clearChannelForTest() {
+    this._cancelCurrent();
+    this.queue.length = 0;
   }
 
   dispose() {

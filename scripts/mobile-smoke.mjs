@@ -146,7 +146,11 @@ await page.waitForFunction(() => {
       copy?.textContent || '',
     ) &&
     Number(getComputedStyle(control).opacity) > .8;
-}, null, { timeout: 2_000 });
+}, null, {
+  // Race Control now preserves the active sentence before airing the urgent
+  // slingshot call, so allow the briefing clip to finish naturally.
+  timeout: 8_000,
+});
 // Let the legacy moment-stamp transition complete before proving that the
 // mobile stylesheet actually suppresses it. Sampling in the class-add frame
 // would mistake a not-yet-painted duplicate for an intentionally hidden one.

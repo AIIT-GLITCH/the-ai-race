@@ -35,7 +35,7 @@ CLIPS = {
     "leader.QWEN": "Qwen takes the lead.",
     "leader.MOONSHOT": "Moonshot takes the lead.",
     "leader.COHERE": "Cohere takes the lead.",
-    "leader.MINIMAX": "MiniMax takes the lead.",
+    "leader.AIIT-THRESHOLD": "AIIT Threshold takes the lead.",
     "leader.MICROSOFT": "Microsoft takes the lead.",
     "rank.up": "OpenAI is charging through the field.",
     "rank.down": "OpenAI loses a position. Time to answer back.",
@@ -87,7 +87,7 @@ LABS = {
     "QWEN": "Qwen",
     "MOONSHOT": "Moonshot",
     "COHERE": "Cohere",
-    "MINIMAX": "MiniMax",
+    "AIIT-THRESHOLD": "AIIT Threshold",
     "MICROSOFT": "Microsoft",
 }
 

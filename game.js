@@ -339,7 +339,8 @@ const ROSTER = [
   { name: 'QWEN',      color: 0x8b5cf6, vmax: 84.7, latG: 20.7, look: 1.09, risk: 0.98, burstAt: 55, lane: 1.5 },
   { name: 'MOONSHOT',  color: 0xffdc5d, vmax: 85.4, latG: 20.3, look: 1.02, risk: 1.02, burstAt: 42, lane: 4.2 },
   { name: 'COHERE',    color: 0xff6b5b, vmax: 83.5, latG: 20.4, look: 1.14, risk: 0.94, burstAt: 62, lane: -4.6 },
-  { name: 'MINIMAX',   color: 0xff3e93, vmax: 84.4, latG: 20.6, look: 1.01, risk: 1.01, burstAt: 45, lane: 0.8 },
+  { name: 'AIIT-THRESHOLD', color: 0xff3e93, trimColor: 0x6cecff, threshold: true,
+    vmax: 85.8, latG: 21.8, look: 0.98, risk: 1.04, burstAt: 41, lane: 0.8 },
   { name: 'MICROSOFT', color: 0x7fdb55, vmax: 84.2, latG: 20.8, look: 1.13, risk: 0.96, burstAt: 57, lane: -2.4 },
   { name: 'OPENAI',    color: 0xdfff47, vmax: 89.5, latG: 22.8, look: 1.04, risk: 1.03, burstAt: 38, lane: 0, player: true },
 ];
@@ -1600,12 +1601,16 @@ function makeShip(spec) {
   const paint = renderProfile.name === 'BALANCED'
     ? new THREE.MeshStandardMaterial({
         color: spec.color, roughness: .28, metalness: .62, envMapIntensity: 1.45,
+        emissive: spec.threshold ? 0x320019 : 0x000000,
+        emissiveIntensity: spec.threshold ? .52 : 0,
       })
     : new THREE.MeshPhysicalMaterial({
         color: spec.color, roughness: .19, metalness: .58,
         clearcoat: 1, clearcoatRoughness: .075, envMapIntensity: 2.45,
+        emissive: spec.threshold ? 0x320019 : 0x000000,
+        emissiveIntensity: spec.threshold ? .7 : 0,
       });
-  const trim = new THREE.MeshBasicMaterial({ color: spec.color, fog: false });
+  const trim = new THREE.MeshBasicMaterial({ color: spec.trimColor || spec.color, fog: false });
   trim.color.multiplyScalar(1.55);
   const engineMat = new THREE.MeshBasicMaterial({ color: 0xbfe9ff, fog: false });
   engineMat.color.multiplyScalar(1.18);
@@ -1627,6 +1632,24 @@ function makeShip(spec) {
   if (style === 2) { dark.scale.x *= 1.08; canopy.scale.set(.9, .92, .88); }
   if (style === 3) canopy.position.z -= .16;
   lean.add(hull, dark, trimMesh, enginesMesh, canopy);
+  if (spec.threshold) {
+    const thresholdHalo = new THREE.Mesh(
+      new THREE.TorusGeometry(1.42, .045, 7, 36),
+      new THREE.MeshBasicMaterial({
+        color: spec.trimColor,
+        transparent: true,
+        opacity: .82,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      }),
+    );
+    thresholdHalo.name = 'AIIT_THRESHOLD_HALO';
+    thresholdHalo.rotation.x = Math.PI / 2;
+    thresholdHalo.position.set(0, .62, -.18);
+    thresholdHalo.scale.z = 1.7;
+    lean.add(thresholdHalo);
+  }
   const engines = [engineMat];
 
   // underglow (team color pool on the deck)
@@ -1647,15 +1670,17 @@ function makeShip(spec) {
   g.add(blob);
 
   if (!spec.player && renderProfile.name !== 'BALANCED') {
-    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+    const cv = document.createElement('canvas'); cv.width = spec.threshold ? 512 : 256; cv.height = 64;
     const c2 = cv.getContext('2d');
-    c2.font = 'bold 42px system-ui, sans-serif'; c2.textAlign = 'center'; c2.textBaseline = 'middle';
-    c2.fillStyle = '#000'; c2.globalAlpha = 0.45; c2.fillRect(0, 0, 256, 64); c2.globalAlpha = 1;
-    c2.fillStyle = '#' + spec.color.toString(16).padStart(6, '0'); c2.fillText(spec.name, 128, 34);
+    c2.font = `bold ${spec.threshold ? 40 : 42}px system-ui, sans-serif`;
+    c2.textAlign = 'center'; c2.textBaseline = 'middle';
+    c2.fillStyle = '#000'; c2.globalAlpha = 0.45; c2.fillRect(0, 0, cv.width, 64); c2.globalAlpha = 1;
+    c2.fillStyle = '#' + (spec.trimColor || spec.color).toString(16).padStart(6, '0');
+    c2.fillText(spec.name, cv.width / 2, 34);
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({
       map: new THREE.CanvasTexture(cv), depthTest: true, transparent: true,
     }));
-    spr.scale.set(Math.min(4.7, Math.max(3.35, spec.name.length * .46)), .78, 1);
+    spr.scale.set(spec.threshold ? 5.8 : Math.min(4.7, Math.max(3.35, spec.name.length * .46)), .78, 1);
     spr.position.y = 1.72;
     g.add(spr);
     return { group: g, lean, engines, plate: spr, shieldMat: null };
@@ -4597,7 +4622,13 @@ function forceFinishForTest(options = {}) {
     ghostRecorder.samples.push([ghostRound(finishTime), ghostRound(L, 2), player.lat, player.psi]);
   }
   triggerMoment('finish', { text: `LINK ACQUIRED // P${rank}`, hold: 2.7 });
+  // Deterministic force-finish tests do not have a real audio clock. Clear
+  // setup chatter, register the crossing, then expose the exact classification
+  // without waiting for browser playback timers.
+  raceControl.clearChannelForTest();
   raceControl.update(raceControlSnapshot());
+  raceControl.clearChannelForTest();
+  raceControl.emitClaim(raceControlSnapshot(), { force: true });
   syncMeshes(performance.now() / 1000);
   updateHeliosPresentation(performance.now() / 1000);
   renderFrame();

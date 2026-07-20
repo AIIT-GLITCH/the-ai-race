@@ -4,7 +4,7 @@ Twelve frontier AI labs. One unclaimed orbital data center. You drive OPENAI
 as the neutral ORBIT-01 pilot or an optional text-only Sam Altman tribute role
 across a 2.7 km, 24-meter-wide anti-gravity ribbon to claim the HELIOS compute
 array before Anthropic, Google DeepMind, xAI, Meta, DeepSeek, Mistral, Qwen,
-Moonshot, Cohere, MiniMax, and Microsoft AI.
+Moonshot, Cohere, AIIT-Threshold, and Microsoft AI.
 
 The entire submission is a dependency-free static browser game: no build step,
 no account, no API key, and no loading spinner.

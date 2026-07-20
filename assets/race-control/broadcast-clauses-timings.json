@@ -1,198 +1,198 @@
 {
   "clause.lab.OPENAI": {
     "offset": 0.0,
-    "duration": 1.158375
+    "duration": 1.15675
   },
   "clause.lab.ANTHROPIC": {
-    "offset": 1.158375,
-    "duration": 0.958667
+    "offset": 1.15675,
+    "duration": 0.948792
   },
   "clause.lab.DEEPMIND": {
-    "offset": 2.117042,
+    "offset": 2.105542,
     "duration": 0.942583
   },
   "clause.lab.xAI": {
-    "offset": 3.059625,
-    "duration": 1.11075
+    "offset": 3.048125,
+    "duration": 1.109875
   },
   "clause.lab.META": {
-    "offset": 4.170375,
-    "duration": 0.766833
+    "offset": 4.158,
+    "duration": 0.76625
   },
   "clause.lab.DEEPSEEK": {
-    "offset": 4.937208,
-    "duration": 0.775833
+    "offset": 4.92425,
+    "duration": 0.775667
   },
   "clause.lab.MISTRAL": {
-    "offset": 5.713042,
-    "duration": 0.863708
+    "offset": 5.699917,
+    "duration": 0.865958
   },
   "clause.lab.QWEN": {
-    "offset": 6.57675,
+    "offset": 6.565875,
     "duration": 0.817958
   },
   "clause.lab.MOONSHOT": {
-    "offset": 7.394708,
+    "offset": 7.383833,
     "duration": 0.865958
   },
   "clause.lab.COHERE": {
-    "offset": 8.260667,
-    "duration": 0.779458
+    "offset": 8.249792,
+    "duration": 0.774583
   },
-  "clause.lab.MINIMAX": {
-    "offset": 9.040125,
-    "duration": 0.955458
+  "clause.lab.AIIT-THRESHOLD": {
+    "offset": 9.024375,
+    "duration": 1.7385
   },
   "clause.lab.MICROSOFT": {
-    "offset": 9.995583,
-    "duration": 1.053
+    "offset": 10.762875,
+    "duration": 1.048917
   },
   "clause.rank.1": {
-    "offset": 11.048583,
-    "duration": 0.680417
+    "offset": 11.811792,
+    "duration": 0.678792
   },
   "clause.rank.2": {
-    "offset": 11.729,
-    "duration": 0.809958
+    "offset": 12.490583,
+    "duration": 0.809417
   },
   "clause.rank.3": {
-    "offset": 12.538958,
-    "duration": 0.524
+    "offset": 13.3,
+    "duration": 0.5235
   },
   "clause.rank.4": {
-    "offset": 13.062958,
-    "duration": 0.595208
+    "offset": 13.8235,
+    "duration": 0.603125
   },
   "clause.rank.5": {
-    "offset": 13.658167,
-    "duration": 0.589375
+    "offset": 14.426625,
+    "duration": 0.595375
   },
   "clause.rank.6": {
-    "offset": 14.247542,
-    "duration": 0.581833
+    "offset": 15.022,
+    "duration": 0.580042
   },
   "clause.rank.7": {
-    "offset": 14.829375,
-    "duration": 0.767333
+    "offset": 15.602042,
+    "duration": 0.765167
   },
   "clause.rank.8": {
-    "offset": 15.596708,
-    "duration": 0.530958
+    "offset": 16.367208,
+    "duration": 0.530375
   },
   "clause.rank.9": {
-    "offset": 16.127667,
+    "offset": 16.897583,
     "duration": 0.673958
   },
   "clause.rank.10": {
-    "offset": 16.801625,
-    "duration": 0.570542
+    "offset": 17.571542,
+    "duration": 0.569833
   },
   "clause.rank.11": {
-    "offset": 17.372167,
-    "duration": 0.804375
+    "offset": 18.141375,
+    "duration": 0.805083
   },
   "clause.rank.12": {
-    "offset": 18.176542,
-    "duration": 0.730333
+    "offset": 18.946458,
+    "duration": 0.730792
   },
   "clause.digit.0": {
-    "offset": 18.906875,
-    "duration": 0.726292
+    "offset": 19.67725,
+    "duration": 0.730917
   },
   "clause.digit.1": {
-    "offset": 19.633167,
-    "duration": 0.634208
+    "offset": 20.408167,
+    "duration": 0.634375
   },
   "clause.digit.2": {
-    "offset": 20.267375,
-    "duration": 0.618042
+    "offset": 21.042542,
+    "duration": 0.623583
   },
   "clause.digit.3": {
-    "offset": 20.885417,
-    "duration": 0.680125
+    "offset": 21.666125,
+    "duration": 0.679333
   },
   "clause.digit.4": {
-    "offset": 21.565542,
-    "duration": 0.6615
+    "offset": 22.345458,
+    "duration": 0.661
   },
   "clause.digit.5": {
-    "offset": 22.227042,
-    "duration": 0.678542
+    "offset": 23.006458,
+    "duration": 0.677625
   },
   "clause.digit.6": {
-    "offset": 22.905583,
-    "duration": 0.499958
+    "offset": 23.684083,
+    "duration": 0.49975
   },
   "clause.digit.7": {
-    "offset": 23.405542,
-    "duration": 0.736042
+    "offset": 24.183833,
+    "duration": 0.735208
   },
   "clause.digit.8": {
-    "offset": 24.141583,
-    "duration": 0.580417
+    "offset": 24.919042,
+    "duration": 0.580542
   },
   "clause.digit.9": {
-    "offset": 24.722,
-    "duration": 0.697958
+    "offset": 25.499583,
+    "duration": 0.700083
   },
   "clause.openai-passes": {
-    "offset": 25.419958,
-    "duration": 1.686875
+    "offset": 26.199667,
+    "duration": 1.685958
   },
   "clause.passes-openai": {
-    "offset": 27.106833,
-    "duration": 1.689458
+    "offset": 27.885625,
+    "duration": 1.69025
   },
   "clause.openai-drops-to": {
-    "offset": 28.796292,
-    "duration": 1.755083
+    "offset": 29.575875,
+    "duration": 1.75175
   },
   "clause.for": {
-    "offset": 30.551375,
-    "duration": 0.555708
+    "offset": 31.327625,
+    "duration": 0.556083
   },
   "clause.takes-lead-from": {
-    "offset": 31.107083,
-    "duration": 1.25425
+    "offset": 31.883708,
+    "duration": 1.249958
   },
   "clause.slingshot-deployed": {
-    "offset": 32.361333,
-    "duration": 1.405875
+    "offset": 33.133667,
+    "duration": 1.405542
   },
   "clause.openai-attacks": {
-    "offset": 33.767208,
-    "duration": 1.649583
+    "offset": 34.539208,
+    "duration": 1.649667
   },
   "clause.helios-online": {
-    "offset": 35.416792,
-    "duration": 1.353667
+    "offset": 36.188875,
+    "duration": 1.353875
   },
   "clause.openai-wins": {
-    "offset": 36.770458,
-    "duration": 2.39
+    "offset": 37.54275,
+    "duration": 2.39025
   },
   "clause.openai-wins-by": {
-    "offset": 39.160458,
-    "duration": 1.845625
+    "offset": 39.933,
+    "duration": 1.839375
   },
   "clause.claims-helios": {
-    "offset": 41.006083,
-    "duration": 1.193833
+    "offset": 41.772375,
+    "duration": 1.194167
   },
   "clause.openai-finishes": {
-    "offset": 42.199917,
-    "duration": 1.591375
+    "offset": 42.966542,
+    "duration": 1.592
   },
   "clause.point": {
-    "offset": 43.791292,
-    "duration": 0.570083
+    "offset": 44.558542,
+    "duration": 0.5675
   },
   "clause.seconds": {
-    "offset": 44.361375,
-    "duration": 0.845208
+    "offset": 45.126042,
+    "duration": 0.843125
   },
   "clause.back": {
-    "offset": 45.206583,
-    "duration": 0.543
+    "offset": 45.969167,
+    "duration": 0.5415
   }
 }

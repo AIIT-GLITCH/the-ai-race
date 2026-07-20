@@ -140,7 +140,9 @@ await page.evaluate(() => window.__aiRace.step(7_000));
 await page.waitForFunction(
   () => window.__aiRace.raceControl().history.some(call => call.kind === 'finish'),
   null,
-  { timeout: 10_000 },
+  // In headless browsers Web Audio may resolve through its 15-second safety
+  // watchdog. Production audio uses the clip's natural `onended` boundary.
+  { timeout: 20_000 },
 );
 const raced = await page.evaluate(() => {
   window.__aiRace.showResults();
@@ -185,6 +187,10 @@ if (!/APEX/.test(setup.status) || !/SAM ALTMAN/.test(setup.status) || !/sam/i.te
   errors.push(`setup presentation failed: ${JSON.stringify(setup)}`);
 }
 if (initial.state.ships.length !== 12) errors.push(`field size: ${initial.state.ships.length}`);
+if (!initial.state.ships.some(ship => ship.name === 'AIIT-THRESHOLD') ||
+    initial.state.ships.some(ship => ship.name === 'MINIMAX')) {
+  errors.push(`AIIT-THRESHOLD roster entry missing: ${JSON.stringify(initial.state.ships.map(ship => ship.name))}`);
+}
 if (initial.track.length < 2_600) errors.push(`track too short: ${initial.track.length}`);
 if (initial.track.halfWidth < 11) errors.push(`track too narrow: ${initial.track.halfWidth}`);
 if (!raced.finished) errors.push('player did not complete the orbital sprint');

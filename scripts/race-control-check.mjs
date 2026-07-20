@@ -434,7 +434,8 @@ assert.ok(
   'core pickup produces a call',
 );
 
-// A finish is priority 100, interrupts any lower-priority call, and discards stale chatter.
+// A finish is priority 100, waits for the active sentence boundary, and
+// discards stale queued chatter.
 director.update(snapshot({
   time: 4,
   leader: 'OPENAI',
@@ -443,9 +444,11 @@ director.update(snapshot({
   progress: 1,
   finished: true,
 }));
+assert.notEqual(calls.at(-1).kind, 'finish', 'finish does not cut off the active call');
+assert.ok(director.inspect().queued.some(item => item.kind === 'finish'));
+finishCurrent();
 assert.equal(calls.at(-1).kind, 'finish');
 assert.match(calls.at(-1).text, /HELIOS online/);
-assert.ok(cancellations >= 1, 'priority finish cancels an in-flight lower-priority call');
 assert.ok(director.inspect().queued.every(item => item.kind === 'finish'), 'finish suppresses stale race calls');
 for (const call of director.inspect().history) {
   assertResolvedClipMatches(director, call, `primary scenario call ${call.id}`);
@@ -453,8 +456,8 @@ for (const call of director.inspect().history) {
 
 director.dispose();
 
-// Countdown time is frozen at zero, so the green call must explicitly bypass
-// the briefing's default 4.1-second simulation-time spacing window.
+// Countdown time is frozen at zero. Green waits for the briefing sentence to
+// finish, then bypasses the default 4.1-second simulation-time spacing window.
 {
   const transitionCalls = [];
   let transitionCancel = 0;
@@ -467,15 +470,18 @@ director.dispose();
   transition.reset(snapshot({ phase: 'countdown' }));
   assert.equal(transition.inspect().current?.kind, 'briefing');
   transition.update(snapshot({ time: 0.01, phase: 'race' }));
-  assert.equal(transition.inspect().current?.kind, 'green', 'green starts on the phase transition');
+  assert.equal(transition.inspect().current?.kind, 'briefing', 'green does not cut off the briefing');
+  assert.ok(transition.inspect().queued.some(item => item.kind === 'green'));
+  transitionCalls.at(-1).done();
+  assert.equal(transition.inspect().current?.kind, 'green', 'green starts at the sentence boundary');
   assert.equal(transitionCalls.at(-1).kind, 'green');
-  assert.ok(transitionCancel >= 1, 'green interrupts a briefing that is still transmitting');
+  assert.equal(transitionCancel, 0, 'normal priority handling does not cancel spoken audio');
   assertResolvedClipMatches(transition, transitionCalls.at(-1), 'immediate green call');
   transition.dispose();
 }
 
-// Priority interrupts bypass the normal spacing window after cancelling a
-// lower-priority transmission.
+// Priority calls bypass the normal spacing window after the current sentence
+// completes, without cancelling spoken audio.
 {
   const urgentCalls = [];
   let urgentCancelled = 0;
@@ -494,8 +500,10 @@ director.dispose();
     progress: 1,
     finished: true,
   }));
+  assert.equal(urgentCalls.at(-1).kind, 'briefing');
+  urgentCalls.at(-1).done();
   assert.equal(urgentCalls.at(-1).kind, 'finish', 'finish bypasses the default minimum call gap');
-  assert.ok(urgentCancelled >= 1, 'finish cancels the lower-priority briefing');
+  assert.equal(urgentCancelled, 0, 'finish preserves the lower-priority sentence already on air');
   urgent.dispose();
 }
 
@@ -620,7 +628,7 @@ function scenario(start = {}) {
 }
 
 // Slingshot readiness and deployment are serial-edge events. A held ready
-// state cannot chatter, and deployment pre-empts lower-priority radio traffic.
+// state cannot chatter, and deployment follows lower-priority audio cleanly.
 {
   const s = scenario();
   s.control.update(snapshot({
@@ -666,6 +674,9 @@ function scenario(start = {}) {
     slingshotSerial: 1,
     draftTarget: 'ANTHROPIC',
   }));
+  assert.equal(s.control.inspect().current?.kind, 'draft');
+  assert.ok(s.control.inspect().queued.some(item => item.kind === 'slingshotFire'));
+  s.end();
   assert.equal(s.control.inspect().current?.kind, 'slingshotFire');
   assert.equal(
     s.spoken.at(-1).text,
