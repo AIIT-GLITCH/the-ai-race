@@ -1,5 +1,10 @@
 import { mkdir } from 'node:fs/promises';
 import playwright, { chromeExecutable } from './playwright-loader.mjs';
+import { DEFAULT_RACE_CONTROL_CLIPS } from '../race-control.js';
+
+const narratorSourceCount = new Set(
+  Object.values(DEFAULT_RACE_CONTROL_CLIPS).map(descriptor => descriptor.src),
+).size;
 
 const url = process.env.GAME_URL || 'http://127.0.0.1:8140/';
 const browser = await playwright.chromium.launch({
@@ -184,8 +189,9 @@ if (initial.track.length < 2_600) errors.push(`track too short: ${initial.track.
 if (initial.track.halfWidth < 11) errors.push(`track too narrow: ${initial.track.halfWidth}`);
 if (!raced.finished) errors.push('player did not complete the orbital sprint');
 if (!raced.ships.every(ship => Number.isFinite(ship.speed))) errors.push('non-finite rival telemetry');
-// Thirty-one full-line calls plus one deduplicated 49-clause audio sprite.
-if (raced.audioCache.decoded < 2 || raced.audioCache.fetches > 32) {
+// Every authored full-line call plus one deduplicated compositional audio
+// sprite may be fetched once; duplicate network work is a regression.
+if (raced.audioCache.decoded < 2 || raced.audioCache.fetches > narratorSourceCount) {
   errors.push(`narrator cache not warm: ${JSON.stringify(raced.audioCache)}`);
 }
 if (menuNarratorCache.decoded < 2) {

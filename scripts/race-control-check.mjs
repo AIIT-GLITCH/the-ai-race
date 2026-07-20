@@ -587,6 +587,38 @@ function scenario(start = {}) {
   s.control.dispose();
 }
 
+// Frequent race moments rotate through authored calls. Once a line has aired,
+// the same caption cannot be queued again during that run.
+{
+  const s = scenario();
+  s.control.update(snapshot({ time: 0.4, drafting: true }));
+  s.control.update(snapshot({ time: 1.11, drafting: true }));
+  while (s.control.inspect().current) s.end();
+  s.control.update(snapshot({ time: 2, drafting: false }));
+  s.control.update(snapshot({ time: 12, drafting: true }));
+  s.control.update(snapshot({ time: 12.8, drafting: true }));
+  while (s.control.inspect().current) s.end();
+
+  const draftCalls = s.spoken.filter(call => call.kind === 'draft');
+  assert.equal(draftCalls.length, 2, 'two separate draft locks produce two calls');
+  assert.notEqual(draftCalls[0].text, draftCalls[1].text, 'draft calls rotate their wording');
+  assert.equal(s.control.emit({
+    id: 'deliberate-repeat',
+    kind: 'draft',
+    text: draftCalls[0].text,
+    clipId: draftCalls[0].clipId,
+    priority: 58,
+    createdAt: 20,
+    expiresAt: 26,
+  }), false, 'an already-aired line is rejected for the remainder of the run');
+  assert.equal(
+    new Set(s.control.inspect().history.map(call => call.text)).size,
+    s.control.inspect().history.length,
+    'race-control history contains no repeated calls',
+  );
+  s.control.dispose();
+}
+
 // Slingshot readiness and deployment are serial-edge events. A held ready
 // state cannot chatter, and deployment pre-empts lower-priority radio traffic.
 {

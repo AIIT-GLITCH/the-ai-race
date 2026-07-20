@@ -137,20 +137,58 @@ export const DEFAULT_RACE_CONTROL_CLIPS = Object.freeze({
   'rank.up': authoredClip('rank-up.mp3', 'OpenAI is charging through the field.'),
   'rank.down': authoredClip('rank-down.mp3', 'OpenAI loses a position. Time to answer back.'),
   draft: authoredClip('draft.mp3', 'Draft link established. Burst charge is climbing.'),
+  'draft.2': authoredClip('draft-2.mp3', 'OpenAI is in the wake. Slingshot charge is building.'),
+  'draft.3': authoredClip('draft-3.mp3', 'Clean tow acquired. Energy is stacking fast.'),
+  'draft.4': authoredClip('draft-4.mp3', 'Wake captured. OpenAI is loading the attack.'),
+  'draft.5': authoredClip('draft-5.mp3', 'The slipstream is locked. Burst reserve climbing.'),
   'slingshot.ready': authoredClip(
     'slingshot-ready.mp3',
     'Wake lock complete. Slingshot is armed.',
+  ),
+  'slingshot.ready.2': authoredClip(
+    'slingshot-ready-2.mp3',
+    'The wake is charged. Attack window open.',
+  ),
+  'slingshot.ready.3': authoredClip(
+    'slingshot-ready-3.mp3',
+    'Slingshot energy at full charge. Release when ready.',
+  ),
+  'slingshot.ready.4': authoredClip(
+    'slingshot-ready-4.mp3',
+    'Tow complete. OpenAI has the slingshot.',
   ),
   'slingshot.fire': authoredClip(
     'slingshot-fire.mp3',
     'Slingshot deployed. OpenAI is coming through.',
   ),
+  'slingshot.fire.2': authoredClip(
+    'slingshot-fire-2.mp3',
+    'OpenAI fires the slingshot and surges forward.',
+  ),
+  'slingshot.fire.3': authoredClip(
+    'slingshot-fire-3.mp3',
+    'Attack boost released. OpenAI is on the move.',
+  ),
+  'slingshot.fire.4': authoredClip(
+    'slingshot-fire-4.mp3',
+    'Slingshot away. Here comes OpenAI.',
+  ),
   core: authoredClip('core.mp3', 'Data core secured. Burst and shields replenished.'),
+  'core.2': authoredClip('core-2.mp3', 'Core aboard. Boost reserve restored.'),
+  'core.3': authoredClip('core-3.mp3', 'Another data core recovered. Systems recharged.'),
+  'core.4': authoredClip('core-4.mp3', 'Payload increased. Shield and burst are back online.'),
+  'core.5': authoredClip('core-5.mp3', 'Core capture confirmed. OpenAI gets fresh energy.'),
+  'core.6': authoredClip('core-6.mp3', 'Recovery complete. Another core joins the payload.'),
+  'core.7': authoredClip('core-7.mp3', 'Data secured. OpenAI has more power in reserve.'),
   'core.8': authoredClip(
     'core-8.mp3',
     'Every data core secured. OpenAI has a full inference payload.',
   ),
   impact: authoredClip('impact.mp3', 'Contact. OpenAI shield is holding.'),
+  'impact.2': authoredClip('impact-2.mp3', 'OpenAI takes a hit, but the shield absorbs it.'),
+  'impact.3': authoredClip('impact-3.mp3', 'Barrier strike. Shield remains online.'),
+  'impact.4': authoredClip('impact-4.mp3', 'Rival contact. OpenAI stays in the fight.'),
+  'impact.5': authoredClip('impact-5.mp3', 'Heavy touch. The shield is still carrying the load.'),
   'shield.low': authoredClip(
     'shield-low.mp3',
     'Thermal shield critical. Keep it off the barriers.',
@@ -188,6 +226,24 @@ export const DEFAULT_RACE_CONTROL_CLIPS = Object.freeze({
     'HELIOS reached. OpenAI is classified. The race is complete.',
   ),
   ...BROADCAST_CLAUSE_CLIPS,
+});
+
+const ROTATING_CLIPS = Object.freeze({
+  draft: Object.freeze(['draft', 'draft.2', 'draft.3', 'draft.4', 'draft.5']),
+  slingshotReady: Object.freeze([
+    'slingshot.ready',
+    'slingshot.ready.2',
+    'slingshot.ready.3',
+    'slingshot.ready.4',
+  ]),
+  slingshotFire: Object.freeze([
+    'slingshot.fire',
+    'slingshot.fire.2',
+    'slingshot.fire.3',
+    'slingshot.fire.4',
+  ]),
+  core: Object.freeze(['core', 'core.2', 'core.3', 'core.4', 'core.5', 'core.6', 'core.7']),
+  impact: Object.freeze(['impact', 'impact.2', 'impact.3', 'impact.4', 'impact.5']),
 });
 
 const DEFAULT_SECTORS = Object.freeze([
@@ -425,6 +481,8 @@ export class RaceControlDirector {
     this.captionTimer = null;
     this.lastSpokenAt = -Infinity;
     this.lastByKind = new Map();
+    this.variantCursor = new Map();
+    this.spokenText = new Set();
     this.now = 0;
     this.phase = 'menu';
     this.voice = null;
@@ -475,6 +533,8 @@ export class RaceControlDirector {
     this._cancelCurrent();
     this.queue.length = 0;
     this.lastByKind.clear();
+    this.variantCursor.clear();
+    this.spokenText.clear();
     this.lastSpokenAt = -Infinity;
     this.now = Number.isFinite(snapshot?.time) ? snapshot.time : 0;
     this.phase = snapshot?.phase || 'countdown';
@@ -565,6 +625,7 @@ export class RaceControlDirector {
 
   emit(event) {
     if (!event || !event.text) return false;
+    if (this.spokenText.has(event.text)) return false;
     const normalized = {
       ...event,
       priority: event.priority ?? 50,
@@ -596,6 +657,14 @@ export class RaceControlDirector {
     }
     if (!this._batchingUpdate) this._drain();
     return true;
+  }
+
+  _nextVariant(group) {
+    const ids = ROTATING_CLIPS[group] || [];
+    if (!ids.length) return null;
+    const cursor = this.variantCursor.get(group) || 0;
+    this.variantCursor.set(group, cursor + 1);
+    return ids[cursor % ids.length];
   }
 
   _detectLeader(snapshot) {
@@ -698,13 +767,14 @@ export class RaceControlDirector {
     if (drafting && !this.prevDrafting) this.draftSince = this.now;
     if (!drafting) this.draftSince = null;
     if (drafting && this.draftSince !== null && this.now - this.draftSince >= this.draftStableFor) {
+      const clipId = this._nextVariant('draft');
       this.emit(makeEvent(
         'draft',
         this.now,
-        DEFAULT_RACE_CONTROL_CLIPS.draft.text,
+        DEFAULT_RACE_CONTROL_CLIPS[clipId].text,
         {
           id: `draft.${this.run}.${Math.round(this.draftSince * 10)}`,
-          clipId: 'draft',
+          clipId,
           dedupeKey: 'draft',
         },
       ));
@@ -725,10 +795,12 @@ export class RaceControlDirector {
     if (fireEdge) {
       // A deployment makes a still-queued armed call obsolete.
       this.queue = this.queue.filter(item => item.kind !== 'slingshotReady');
-      const text = target
+      const rotatingClipId = this._nextVariant('slingshotFire');
+      const useDetailedCall = rotatingClipId === 'slingshot.fire' && target;
+      const text = useDetailedCall
         ? `Slingshot deployed. OpenAI attacks ${spokenLab(target)}.`
-        : DEFAULT_RACE_CONTROL_CLIPS['slingshot.fire'].text;
-      const audioProgram = target
+        : DEFAULT_RACE_CONTROL_CLIPS[rotatingClipId].text;
+      const audioProgram = useDetailedCall
         ? program(
           ['clause.slingshot-deployed', 100],
           'clause.openai-attacks',
@@ -741,7 +813,7 @@ export class RaceControlDirector {
         text,
         {
           id: `slingshot-fire.${this.run}.${fireSerial}`,
-          clipId: 'slingshot.fire',
+          clipId: rotatingClipId,
           dedupeKey: 'slingshot-fire',
           interrupt: true,
           audioProgram,
@@ -749,13 +821,14 @@ export class RaceControlDirector {
         },
       ));
     } else if (readyEdge) {
+      const clipId = this._nextVariant('slingshotReady');
       this.emit(makeEvent(
         'slingshotReady',
         this.now,
-        DEFAULT_RACE_CONTROL_CLIPS['slingshot.ready'].text,
+        DEFAULT_RACE_CONTROL_CLIPS[clipId].text,
         {
           id: `slingshot-ready.${this.run}.${readySerial}`,
-          clipId: 'slingshot.ready',
+          clipId,
           dedupeKey: 'slingshot-ready',
           meta: { serial: readySerial, target },
         },
@@ -771,12 +844,11 @@ export class RaceControlDirector {
     if (packets > this.prevPackets) {
       const total = snapshot.player?.packetTotal || 8;
       const complete = packets >= total;
-      const text = complete
-        ? DEFAULT_RACE_CONTROL_CLIPS['core.8'].text
-        : DEFAULT_RACE_CONTROL_CLIPS.core.text;
+      const clipId = complete ? 'core.8' : this._nextVariant('core');
+      const text = DEFAULT_RACE_CONTROL_CLIPS[clipId].text;
       this.emit(makeEvent('core', this.now, text, {
         id: `core.${packets}`,
-        clipId: complete ? 'core.8' : `core.${packets}`,
+        clipId,
         dedupeKey: 'core',
         meta: { packets, total },
       }));
@@ -793,13 +865,14 @@ export class RaceControlDirector {
     const shieldDrop = this.prevShield - shield;
 
     if ((collision || wallHit) && shieldDrop > 0.6 && shield > 0) {
+      const clipId = this._nextVariant('impact');
       this.emit(makeEvent(
         'impact',
         this.now,
-        DEFAULT_RACE_CONTROL_CLIPS.impact.text,
+        DEFAULT_RACE_CONTROL_CLIPS[clipId].text,
         {
           id: `impact.${impactSerial}.${Math.round(this.now * 10)}`,
-          clipId: 'impact',
+          clipId,
           dedupeKey: 'impact',
         },
       ));
@@ -1067,6 +1140,7 @@ export class RaceControlDirector {
     this.currentRequestedAt = this.wallNow();
     this.lastSpokenAt = this.now;
     this.lastByKind.set(item.kind, this.now);
+    this.spokenText.add(item.text);
     this.history.push({
       id: item.id,
       kind: item.kind,
