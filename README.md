@@ -9,6 +9,17 @@ Moonshot, Cohere, AIIT-Threshold, and Microsoft AI.
 The entire submission is a dependency-free static browser game: no build step,
 no account, no API key, and no loading spinner.
 
+## Play the game
+
+- [Public build](https://the-ai-race-orbit.wikerdw1.chatgpt.site/)
+- [Judge showcase: Sam Altman / Pro / Sprint](https://the-ai-race-orbit.wikerdw1.chatgpt.site/?showcase=1)
+- [Automated showcase race](https://the-ai-race-orbit.wikerdw1.chatgpt.site/?showcase=1&autostart=1)
+
+For the intended judged run, open the judge showcase, leave the twelve-car grid
+selected, press **Start Run**, and drive with the keyboard, touch controls, or a
+standard gamepad. The automated link stages the same Sam/Pro/Sprint scenario
+and enables the built-in race autopilot for a quick visual and audio tour.
+
 ## Run
 
 ```bash
