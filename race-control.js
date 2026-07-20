@@ -19,6 +19,7 @@ import { BROADCAST_CLAUSE_TIMINGS } from './assets/race-control/broadcast-clause
  */
 
 const CLIP_ROOT = 'assets/race-control';
+const NARRATOR_VOLUME = 0.84;
 const authoredClip = (file, text) => Object.freeze({
   src: `${CLIP_ROOT}/${file}`,
   text,
@@ -1510,7 +1511,7 @@ export class RaceControlDirector {
       compressor.ratio.value = 5;
       compressor.attack.value = 0.006;
       compressor.release.value = 0.12;
-      gain.gain.value = clamp(descriptor.volume ?? 0.92, 0, 1);
+      gain.gain.value = clamp(descriptor.volume ?? NARRATOR_VOLUME, 0, 1);
       source.connect(highpass);
       highpass.connect(lowpass);
       lowpass.connect(compressor);
@@ -1579,7 +1580,7 @@ export class RaceControlDirector {
     if (!this.AudioCtor) return this._speak(safeFallback, finish);
     const audio = new this.AudioCtor(descriptor.src);
     audio.preload = 'auto';
-    audio.volume = clamp(descriptor.volume ?? 0.92, 0, 1);
+    audio.volume = clamp(descriptor.volume ?? NARRATOR_VOLUME, 0, 1);
     audio.playbackRate = descriptor.rate || 1;
     let fallback = null;
     let speechCancel = null;
@@ -1613,7 +1614,7 @@ export class RaceControlDirector {
         compressor.ratio.value = 5;
         compressor.attack.value = 0.006;
         compressor.release.value = 0.12;
-        gain.gain.value = 0.9;
+        gain.gain.value = NARRATOR_VOLUME;
         source.connect(highpass);
         highpass.connect(lowpass);
         lowpass.connect(compressor);
@@ -1698,7 +1699,7 @@ export class RaceControlDirector {
     utterance.lang = voice?.lang || 'en-US';
     utterance.rate = 1.08;
     utterance.pitch = 0.84;
-    utterance.volume = 0.96;
+    utterance.volume = NARRATOR_VOLUME;
     let settled = false;
     const done = () => {
       if (settled) return;

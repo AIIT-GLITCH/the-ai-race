@@ -2849,7 +2849,7 @@ function readInput() {
 
 // ---------- audio: EV turbine (worklet whine + noise taps) ----------
 const MASTER_VOL = 0.17;
-const MUSIC_VOL = 0.27;
+const MUSIC_VOL = 0.31;
 const TURBINE_WORKLET = `
 class TurbineProc extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -3052,7 +3052,7 @@ function setMuted(m) {
 }
 function musicLevel() {
   if (state.muted || state.phase === 'menu' || state.phase === 'results' || state.phase === 'paused') return 0;
-  return MUSIC_VOL * (narratorDucking ? .26 : 1);
+  return MUSIC_VOL * (narratorDucking ? .32 : 1);
 }
 function syncMusicGain(timeConstant = .16) {
   if (!musicGain || !ac) return;
