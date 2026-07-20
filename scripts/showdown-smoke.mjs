@@ -431,6 +431,44 @@ let showcaseReport;
   assert.equal(menuReport.driver.id, 'sam');
   assert.equal(menuReport.ghost.available, false);
   assert.match(menuReport.start, /HELIOS showdown/i);
+
+  const gridModes = await menu.page.evaluate(() => {
+    const race = window.__aiRace;
+    const reports = [];
+    for (const difficulty of ['rookie', 'pro', 'apex']) {
+      for (const contract of ['sprint', 'full-payload', 'clean-uplink', 'slingshot-master']) {
+        race.setDifficulty(difficulty);
+        race.setDriver('sam');
+        race.setContract(contract);
+        race.reset();
+        const state = race.state();
+        reports.push({
+          difficulty,
+          contract,
+          count: state.ships.length,
+          playerProgress: state.progress,
+          leadingProgress: Math.max(...state.ships.map(ship => ship.progress)),
+          staged: state.progress > 0,
+        });
+      }
+    }
+    return reports;
+  });
+  for (const report of gridModes) {
+    assert.equal(report.count, 12, `${report.difficulty}/${report.contract} keeps all twelve cars`);
+    const shouldStage = report.difficulty === 'pro' && report.contract === 'sprint';
+    assert.equal(
+      report.staged,
+      shouldStage,
+      `${report.difficulty}/${report.contract} uses the correct starting grid`,
+    );
+    if (!shouldStage) {
+      assert.ok(
+        report.leadingProgress < 0,
+        `${report.difficulty}/${report.contract} starts the complete field behind the line`,
+      );
+    }
+  }
   await menu.context.close();
 
   const automatic = await openGame({ showcase: '1', autostart: '1' });

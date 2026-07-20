@@ -292,6 +292,10 @@ const setupSelection = {
 const activeDifficulty = () => DIFFICULTY_PRESETS[setupSelection.difficulty];
 const activeDriver = () => DRIVER_PROFILES[setupSelection.driver];
 const activeContract = () => CONTRACT_PRESETS[setupSelection.contract];
+const showcaseSetupActive = () => showcaseMode &&
+  setupSelection.difficulty === 'pro' &&
+  setupSelection.driver === 'sam' &&
+  setupSelection.contract === 'sprint';
 const recordKey = () => `${setupSelection.difficulty}:${setupSelection.contract}`;
 function loadRecords() {
   try {
@@ -340,7 +344,7 @@ const ROSTER = [
   { name: 'MOONSHOT',  color: 0xffdc5d, vmax: 85.4, latG: 20.3, look: 1.02, risk: 1.02, burstAt: 42, lane: 4.2 },
   { name: 'COHERE',    color: 0xff6b5b, vmax: 83.5, latG: 20.4, look: 1.14, risk: 0.94, burstAt: 62, lane: -4.6 },
   { name: 'AIIT-THRESHOLD', color: 0xff3e93, trimColor: 0x6cecff, threshold: true,
-    vmax: 85.8, latG: 21.8, look: 0.98, risk: 1.04, burstAt: 41, lane: 0.8 },
+    vmax: 84.4, latG: 20.6, look: 1.01, risk: 1.01, burstAt: 45, lane: 0.8 },
   { name: 'MICROSOFT', color: 0x7fdb55, vmax: 84.2, latG: 20.8, look: 1.13, risk: 0.96, burstAt: 57, lane: -2.4 },
   { name: 'OPENAI',    color: 0xdfff47, vmax: 89.5, latG: 22.8, look: 1.04, risk: 1.03, burstAt: 38, lane: 0, player: true },
 ];
@@ -2634,7 +2638,7 @@ function placeShipAtProgress(c, progress, lat, speed) {
 }
 
 function stageShowcaseGrid() {
-  if (!showcaseMode) return;
+  if (!showcaseSetupActive()) return;
   const target = ships.find(c => c.spec.name === 'ANTHROPIC') || ships[0];
   const base = L * .835;
   placeShipAtProgress(target, base + 17, -1.2, 72);
@@ -3751,7 +3755,7 @@ function refreshSetupPresentation() {
   hud.driverHud.textContent = driver.hudName;
   hud.difficultyHud.textContent = difficulty.label;
   hud.pilotSpeedLabel.textContent = driver.callsign;
-  hud.start.textContent = showcaseMode
+  hud.start.textContent = showcaseSetupActive()
     ? 'Launch HELIOS showdown'
     : (driver.id === 'sam' ? 'Launch as Sam' : 'Initiate launch');
   paintDriverBadge(player.driverBadge, driver);
