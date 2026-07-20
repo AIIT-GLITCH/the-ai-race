@@ -430,7 +430,7 @@ let showcaseReport;
   assert.equal(menuReport.state.showcase, true);
   assert.equal(menuReport.driver.id, 'sam');
   assert.equal(menuReport.ghost.available, false);
-  assert.match(menuReport.start, /HELIOS showdown/i);
+  assert.match(menuReport.start, /Launch as Sam/i);
 
   const gridModes = await menu.page.evaluate(() => {
     const race = window.__aiRace;
@@ -456,7 +456,7 @@ let showcaseReport;
   });
   for (const report of gridModes) {
     assert.equal(report.count, 12, `${report.difficulty}/${report.contract} keeps all twelve cars`);
-    const shouldStage = report.difficulty === 'pro' && report.contract === 'sprint';
+    const shouldStage = false;
     assert.equal(
       report.staged,
       shouldStage,

@@ -293,6 +293,7 @@ const activeDifficulty = () => DIFFICULTY_PRESETS[setupSelection.difficulty];
 const activeDriver = () => DRIVER_PROFILES[setupSelection.driver];
 const activeContract = () => CONTRACT_PRESETS[setupSelection.contract];
 const showcaseSetupActive = () => showcaseMode &&
+  query.get('autostart') === '1' &&
   setupSelection.difficulty === 'pro' &&
   setupSelection.driver === 'sam' &&
   setupSelection.contract === 'sprint';
@@ -3755,9 +3756,7 @@ function refreshSetupPresentation() {
   hud.driverHud.textContent = driver.hudName;
   hud.difficultyHud.textContent = difficulty.label;
   hud.pilotSpeedLabel.textContent = driver.callsign;
-  hud.start.textContent = showcaseSetupActive()
-    ? 'Launch HELIOS showdown'
-    : (driver.id === 'sam' ? 'Launch as Sam' : 'Initiate launch');
+  hud.start.textContent = driver.id === 'sam' ? 'Launch as Sam' : 'Initiate launch';
   paintDriverBadge(player.driverBadge, driver);
   player.driverAccentMat?.color.set(driver.accent);
   player.shieldMat?.color.set(driver.accent);

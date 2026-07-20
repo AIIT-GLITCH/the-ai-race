@@ -35,10 +35,10 @@ npm start
 
 Standard gamepads and full touch controls are supported.
 
-For a judged demo, `?showcase=1` opens a hand-staged Pro showdown as Sam:
-OPENAI sits 17 m behind ANTHROPIC with a wake lock and slingshot armed near the
-finish. Add `&autostart=1` to launch it immediately. Showcase runs never read
-or overwrite personal-best ghost data.
+For a judged demo, `?showcase=1` opens the Pro/Sam/Sprint setup with the normal
+twelve-car starting grid. Add `&autostart=1` to launch the hand-staged final
+showdown: OPENAI starts 17 m behind ANTHROPIC with the wake and slingshot armed.
+Showcase runs never read or overwrite personal-best ghost data.
 
 ## Race setup
 
