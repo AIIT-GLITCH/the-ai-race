@@ -35,6 +35,11 @@ npm start
 
 Standard gamepads and full touch controls are supported.
 
+The race soundtrack, **Threshold Voltage**, is an original procedural arena-rock
+master generated specifically for this project. Its reproducible source lives
+in `scripts/generate-threshold-voltage.py`; Race Control automatically ducks the
+music while broadcasting.
+
 For a judged demo, `?showcase=1` opens the Pro/Sam/Sprint setup with the normal
 twelve-car starting grid. Add `&autostart=1` to launch the hand-staged final
 showdown: OPENAI starts 17 m behind ANTHROPIC with the wake and slingshot armed.

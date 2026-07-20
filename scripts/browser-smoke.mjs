@@ -57,6 +57,8 @@ await page.waitForFunction(
 const criticalNarratorStartLatencyMs = await page.evaluate(
   () => window.__aiRace.raceControl().audioCache.lastDecodedStartLatencyMs,
 );
+await page.waitForTimeout(450);
+const launchAudio = await page.evaluate(() => window.__aiRace.audio());
 const slingshot = await page.evaluate(() => {
   const race = window.__aiRace;
   const feedback = selector => {
@@ -138,11 +140,15 @@ await page.evaluate(() => {
 await page.screenshot({ path: '.qa/race.png' });
 await page.evaluate(() => window.__aiRace.step(7_000));
 await page.waitForFunction(
-  () => window.__aiRace.raceControl().history.some(call => call.kind === 'finish'),
+  () => window.__aiRace.raceControl().finishCalled,
   null,
-  // In headless browsers Web Audio may resolve through its 15-second safety
-  // watchdog. Production audio uses the clip's natural `onended` boundary.
-  { timeout: 20_000 },
+  { timeout: 10_000 },
+);
+await page.evaluate(() => window.__aiRace.advanceNarratorForTest());
+await page.waitForFunction(
+  () => window.__aiRace.raceControl().history.some(call => call.kind === 'finish' || call.kind === 'claim'),
+  null,
+  { timeout: 2_000 },
 );
 const raced = await page.evaluate(() => {
   window.__aiRace.showResults();
@@ -205,6 +211,9 @@ if (menuNarratorCache.decoded < 2) {
 }
 if (!Number.isFinite(criticalNarratorStartLatencyMs) || criticalNarratorStartLatencyMs > 100) {
   errors.push(`critical narrator start path too slow: ${criticalNarratorStartLatencyMs}ms`);
+}
+if (!launchAudio.musicPlaying || launchAudio.music <= 0.005) {
+  errors.push(`race soundtrack did not start: ${JSON.stringify(launchAudio)}`);
 }
 if (!slingshot.armed ||
     slingshot.state.slingshotSerial !== slingshot.beforeSerial + 1 ||

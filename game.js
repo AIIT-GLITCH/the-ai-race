@@ -2722,6 +2722,7 @@ function resetRace() {
   document.body.classList.add('race-active');
   camSnap();
   raceControl?.reset(raceControlSnapshot());
+  startRaceMusic(true);
 }
 
 function ranking() {
@@ -2804,8 +2805,11 @@ function onKey(e, down) {
     camSnap();
   }
   if (code === 'Escape' || code === 'KeyP') {
-    if (state.phase === 'race') { state.phase = 'paused'; hud.pause.classList.add('show'); }
-    else if (state.phase === 'paused') { state.phase = 'race'; hud.pause.classList.remove('show'); }
+    if (state.phase === 'race') {
+      state.phase = 'paused'; hud.pause.classList.add('show'); pauseRaceMusic();
+    } else if (state.phase === 'paused') {
+      state.phase = 'race'; hud.pause.classList.remove('show'); resumeRaceMusic();
+    }
   }
 }
 const touch = { left: false, right: false, gas: false, brk: false, boost: false, drift: false };
@@ -2845,6 +2849,7 @@ function readInput() {
 
 // ---------- audio: EV turbine (worklet whine + noise taps) ----------
 const MASTER_VOL = 0.17;
+const MUSIC_VOL = 0.27;
 const TURBINE_WORKLET = `
 class TurbineProc extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -2897,6 +2902,7 @@ let ac = null, engineNode = null, engineFilt = null, engineGain = null,
   scrapeFilt = null, scrapeGain = null, masterGain = null, bedGain = null, momentGain = null,
   scoreGain = null,
   scoreFilt = null, scoreVoices = [], lastAudioT = 0;
+let musicAudio = null, musicSource = null, musicGain = null, musicStopToken = 0;
 let narratorDucking = false;
 const aiVoices = [];
 const _lisDir = new THREE.Vector3();
@@ -2913,6 +2919,15 @@ function ensureAudio() {
     momentGain.gain.value = 1;
     bedGain.connect(masterGain);
     momentGain.connect(masterGain);
+
+    musicAudio = new Audio('assets/music/threshold-voltage.mp3');
+    musicAudio.preload = 'auto';
+    musicAudio.loop = true;
+    musicSource = ac.createMediaElementSource(musicAudio);
+    musicGain = ac.createGain();
+    musicGain.gain.value = 0;
+    musicSource.connect(musicGain);
+    musicGain.connect(ac.destination);
 
     engineFilt = ac.createBiquadFilter(); engineFilt.type = 'lowpass';
     engineFilt.frequency.value = 1200; engineFilt.Q.value = 0.8;
@@ -3033,11 +3048,52 @@ function setMuted(m) {
     const level = m ? 0 : MASTER_VOL;
     masterGain.gain.setTargetAtTime(level, ac.currentTime, 0.03);
   }
+  syncMusicGain(.03);
+}
+function musicLevel() {
+  if (state.muted || state.phase === 'menu' || state.phase === 'results' || state.phase === 'paused') return 0;
+  return MUSIC_VOL * (narratorDucking ? .26 : 1);
+}
+function syncMusicGain(timeConstant = .16) {
+  if (!musicGain || !ac) return;
+  musicGain.gain.setTargetAtTime(musicLevel(), ac.currentTime, timeConstant);
+}
+function startRaceMusic(restart = false) {
+  if (!musicAudio || !ac) return;
+  musicStopToken++;
+  if (restart) {
+    try { musicAudio.currentTime = 0; } catch { /* metadata may still be loading */ }
+  }
+  musicAudio.play().catch(() => {});
+  syncMusicGain(.16);
+}
+function pauseRaceMusic() {
+  musicStopToken++;
+  if (musicGain && ac) musicGain.gain.setTargetAtTime(0, ac.currentTime, .04);
+  musicAudio?.pause();
+}
+function resumeRaceMusic() {
+  if (!musicAudio || !ac) return;
+  musicStopToken++;
+  musicAudio.play().catch(() => {});
+  syncMusicGain(.1);
+}
+function stopRaceMusic(rewind = true) {
+  const token = ++musicStopToken;
+  if (musicGain && ac) musicGain.gain.setTargetAtTime(0, ac.currentTime, .28);
+  setTimeout(() => {
+    if (token !== musicStopToken || !musicAudio) return;
+    musicAudio.pause();
+    if (rewind) {
+      try { musicAudio.currentTime = 0; } catch { /* metadata may still be loading */ }
+    }
+  }, 900);
 }
 function setNarratorDuck(ducking) {
   narratorDucking = Boolean(ducking);
   if (!bedGain || !ac) return;
   bedGain.gain.setTargetAtTime(narratorDucking ? .3 : 1, ac.currentTime, narratorDucking ? 0.04 : 0.16);
+  syncMusicGain(narratorDucking ? .04 : .18);
 }
 function updateAudio() {
   if (!ac || !engineGain) return;
@@ -3065,7 +3121,7 @@ function updateAudio() {
     const roots = [55, 61.74, 65.41, 73.42, 82.41, 98];
     const root = roots[Math.min(roots.length - 1, Math.floor(progress * roots.length))];
     scoreVoices.forEach(v => v.osc.frequency.setTargetAtTime(root * v.ratio, t, .45));
-    scoreGain.gain.setTargetAtTime(active ? .11 + Math.min(spd / 800, .035) : .018, t, .6);
+    scoreGain.gain.setTargetAtTime(active ? .026 : .005, t, .6);
     scoreFilt.frequency.setTargetAtTime(420 + spd * 8 + (player.boosting ? 480 : 0) + (slingshot ? 360 : 0), t, .3);
   }
 
@@ -3821,6 +3877,7 @@ function showSetupMenu() {
   hud.launchCue.classList.remove('live', 'battle', 'ready', 'active');
   hud.momentStamp?.classList.remove('live', 'danger');
   raceControl.reset(raceControlSnapshot());
+  stopRaceMusic();
   refreshSetupPresentation();
 }
 
@@ -3928,7 +3985,9 @@ hud.racePb?.addEventListener('click', () => {
   resetRace();
 });
 document.getElementById('setupBtn').addEventListener('click', showSetupMenu);
-document.getElementById('resumeBtn').addEventListener('click', () => { state.phase = 'race'; hud.pause.classList.remove('show'); });
+document.getElementById('resumeBtn').addEventListener('click', () => {
+  state.phase = 'race'; hud.pause.classList.remove('show'); resumeRaceMusic();
+});
 document.getElementById('pauseRestart').addEventListener('click', () => { hud.pause.classList.remove('show'); resetRace(); });
 hud.mute.addEventListener('click', () => setMuted(!state.muted));
 
@@ -4180,6 +4239,7 @@ function updateHUD(dt) {
 
 function showResults() {
   state.phase = 'results';
+  stopRaceMusic();
   document.body.classList.remove('race-active');
   document.body.classList.add('results-active');
   hud.launchCue.classList.remove('live', 'battle', 'ready', 'active');
@@ -4793,6 +4853,7 @@ const testApi = {
   },
   autopilot(on) { state.autopilot = !!on; },
   tickFx(dt) { updateParticles(dt); for (const c of ships) updateTrail(c, dt); },
+  advanceNarratorForTest() { return raceControl.advanceChannelForTest(); },
   audio() {
     ensureAudio(); updateAudio();
     return !ac ? { built: false } : {
@@ -4800,6 +4861,8 @@ const testApi = {
       freq: engineNode ? engineNode.parameters.get('freq').value : 0,
       engineGain: engineGain.gain.value, master: masterGain.gain.value,
       bed: bedGain?.gain.value ?? 0, moment: momentGain?.gain.value ?? 0,
+      music: musicGain?.gain.value ?? 0,
+      musicPlaying: Boolean(musicAudio && !musicAudio.paused),
       aiVoices: aiVoices.length,
     };
   },

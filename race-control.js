@@ -1858,6 +1858,13 @@ export class RaceControlDirector {
     this.queue.length = 0;
   }
 
+  advanceChannelForTest() {
+    if (!this.current) return false;
+    this._cancelCurrent();
+    this._drain();
+    return true;
+  }
+
   dispose() {
     this._cancelCurrent();
     this.queue.length = 0;

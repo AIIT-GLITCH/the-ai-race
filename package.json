@@ -13,7 +13,8 @@
     "test:options": "node scripts/gameplay-options-smoke.mjs",
     "test:graphics": "node scripts/graphics-smoke.mjs",
     "test:mobile": "node scripts/mobile-smoke.mjs",
-    "test:showdown": "node scripts/showdown-smoke.mjs"
+    "test:showdown": "node scripts/showdown-smoke.mjs",
+    "test:music": "node scripts/music-smoke.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.61.1"
